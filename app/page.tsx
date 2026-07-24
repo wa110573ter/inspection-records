@@ -1,5 +1,6 @@
 import { requireChatGPTUser } from "./chatgpt-auth";
 import InspectionApp from "./inspection-app";
+import MobileUploadFix from "./mobile-upload-fix";
 
 export const dynamic = "force-dynamic";
 
@@ -7,6 +8,7 @@ export default async function Home() {
   const user = await requireChatGPTUser("/");
   return (
     <>
+      <MobileUploadFix />
       <InspectionApp userName={user.displayName} />
       <a
         href="/import"
