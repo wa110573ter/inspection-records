@@ -1,0 +1,106 @@
+name: Validate inspection records
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - agent/date-timeline-dropdowns
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript strict check
+        id: typecheck
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          npx tsc --noEmit > typecheck.log 2>&1
+          code=$?
+          cat typecheck.log
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: ESLint
+        id: lint
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          npm run lint > eslint.log 2>&1
+          code=$?
+          cat eslint.log
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: Build and rendered HTML tests
+        id: test
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          npm test > test.log 2>&1
+          code=$?
+          cat test.log
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: Validate built artifact
+        id: artifact
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          npm run validate:artifact > artifact.log 2>&1
+          code=$?
+          cat artifact.log
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: Upload validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-reports
+          path: |
+            typecheck.log
+            eslint.log
+            test.log
+            artifact.log
+          if-no-files-found: ignore
+
+      - name: Final validation gate
+        if: always()
+        shell: bash
+        run: |
+          echo "TypeScript: ${{ steps.typecheck.outputs.exit_code }}"
+          echo "ESLint: ${{ steps.lint.outputs.exit_code }}"
+          echo "Tests: ${{ steps.test.outputs.exit_code }}"
+          echo "Artifact: ${{ steps.artifact.outputs.exit_code }}"
+          test "${{ steps.typecheck.outputs.exit_code }}" = "0"
+          test "${{ steps.lint.outputs.exit_code }}" = "0"
+          test "${{ steps.test.outputs.exit_code }}" = "0"
+          test "${{ steps.artifact.outputs.exit_code }}" = "0"
