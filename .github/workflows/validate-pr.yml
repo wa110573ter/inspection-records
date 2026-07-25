@@ -6,11 +6,10 @@ on:
   push:
     branches:
       - agent/date-timeline-dropdowns
-      - agent/native-workflow-fix
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: validate-${{ github.ref }}
@@ -23,34 +22,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
-
-      - name: Apply native source payload
-        if: (github.event_name == 'pull_request' && github.head_ref == 'agent/native-workflow-fix') || (github.event_name == 'push' && github.ref == 'refs/heads/agent/native-workflow-fix')
-        shell: bash
-        run: |
-          python scripts/apply-native-payload.py
-          if git diff --quiet -- app/inspection-app.tsx app/page.tsx; then
-            echo "No source changes."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/inspection-app.tsx app/page.tsx
-          git commit -m "將追蹤與下拉功能改為原生表單"
-          git push
-
-      - name: Remove source transport files
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/native-workflow-fix'
-        shell: bash
-        run: |
-          python scripts/cleanup-native-payload.py
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "移除原生表單傳輸暫存檔"
-          git push
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -120,16 +91,6 @@ jobs:
             test.log
             artifact.log
           if-no-files-found: ignore
-
-      - name: Upload editable source
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: editable-source
-          path: |
-            app/inspection-app.tsx
-            app/page.tsx
-          if-no-files-found: error
 
       - name: Final validation gate
         if: always()
