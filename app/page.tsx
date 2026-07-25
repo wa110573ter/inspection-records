@@ -1,8 +1,6 @@
 import { requireChatGPTUser } from "./chatgpt-auth";
 import InspectionApp from "./inspection-app";
 import MobileUploadFix from "./mobile-upload-fix";
-import DateTimelineEnhancements from "./date-timeline-enhancements";
-import WorkflowEnhancements from "./workflow-enhancements";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +9,6 @@ export default async function Home() {
   return (
     <>
       <MobileUploadFix />
-      <DateTimelineEnhancements />
-      <WorkflowEnhancements />
       <InspectionApp userName={user.displayName} />
       <a
         href="/import"

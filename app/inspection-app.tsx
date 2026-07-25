@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, Fragment, useEffect, useMemo, useState } from "react";
 
 type Attachment = {
   id: string;
@@ -21,6 +21,7 @@ type FollowUp = {
   result: string;
   nextStep: string;
   followUpDate: string;
+  createdAt?: string;
   attachments: Attachment[];
 };
 
@@ -52,7 +53,90 @@ const statuses = [
   "其他",
 ];
 
-const methods = ["電話聯絡", "現場勘查", "用戶回傳", "內部處理", "其他"];
+const methods = [
+  "電話聯絡",
+  "LINE聯繫",
+  "現場勘查",
+  "現場複查",
+  "查詢資料",
+  "收到用戶資料",
+  "用戶回傳",
+  "內部處理",
+  "內部簽辦",
+  "其他",
+];
+
+const reasonGroups: Record<string, string[]> = {
+  抄表異常: ["抄表人員未抄到指針", "指針疑似誤抄", "指針異常", "換表後指針不符"],
+  無法抄表: ["2期未抄到", "3期未抄到", "表位不明", "門鎖無法進入", "水表遭遮蔽", "用戶拒絕進入"],
+  用水量異常: ["用水量徒增", "用水量突減", "連續零度", "用水量與現場情形不符"],
+  客訴案件: ["電話客訴", "臨櫃客訴", "1910錄案（重要）", "陳情案件"],
+  漏水案件: ["疑似表後漏水", "漏水已修", "申請漏水減免", "修繕資料待補"],
+  水表異常: ["水表疑似故障", "要求換表檢驗", "水表遺失或遭竊", "表位或表箱異常"],
+  其他: [],
+};
+
+const contactPersonOptions = ["用戶本人", "家屬", "店長", "管理人員", "鄰居", "里長", "其他"];
+const contactResultOptions = ["已接聽", "未接", "空號", "關機", "稍後回電", "已讀未回", "已取得聯繫"];
+const customerResponseOptions = [
+  "已知漏水",
+  "尚未檢查",
+  "已安排修繕",
+  "已修繕完成",
+  "不認同用水量",
+  "要求換表檢驗",
+  "同意後續觀察用水",
+  "其他",
+];
+
+const processOptions = [
+  "電話聯繫用戶，說明案件情形。",
+  "現場抄錄水表指針。",
+  "核對前期抄表指數及用水量。",
+  "檢查水表及表後管線是否有漏水情形。",
+  "向用戶說明目前用水情形。",
+  "收到用戶回傳的照片或資料。",
+  "查詢3-1系統及相關資料。",
+];
+
+const resultOptions = [
+  "已完成處理",
+  "已向用戶說明並取得諒解",
+  "確認抄表無誤",
+  "發現表後漏水",
+  "未發現漏水",
+  "等待用戶檢查或修繕",
+  "等待用戶回覆",
+  "聯絡未果",
+  "需再次現勘",
+  "已結案",
+];
+
+const nextStepOptions = [
+  "無，案件可結案",
+  "再次電話聯繫",
+  "等待用戶回覆",
+  "等待用戶修繕",
+  "請用戶提供修理前、中、後照片及收據",
+  "安排現場勘查",
+  "安排現場複查",
+  "確認後續用水量",
+  "辦理簽報或退費",
+  "轉請相關單位處理",
+];
+
+const trackingOptions = [
+  ["all", "全部追蹤狀態"],
+  ["open", "未結案"],
+  ["today", "今日要追蹤"],
+  ["overdue", "已逾期"],
+  ["threeDays", "3日內要追蹤"],
+  ["noDate", "未設定追蹤日期"],
+  ["inactive7", "最近7天未處理"],
+  ["closed", "已結案"],
+] as const;
+
+type TrackingFilter = (typeof trackingOptions)[number][0];
 
 const extraStyles = `
   .detail-actions,.form-actions,.record-actions,.attachment-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -81,30 +165,144 @@ const extraStyles = `
   .record-head-actions{display:flex;align-items:center;justify-content:space-between;gap:10px}
   .record-head-actions .record-actions{justify-content:flex-end}
   .status-select.compact{min-width:150px}
+  .field-hint{display:block;margin-top:7px;color:#65738a;font-size:.72rem;line-height:1.45;font-weight:700}
+  .reason-picker,.contact-picker{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px;border:1px solid #d7e1ee;border-radius:15px;background:#f8fbff}
+  .contact-picker{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .picker-title{grid-column:1/-1;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .picker-title strong{color:#17345d;font-size:.88rem}
+  .picker-title small{color:#748197;font-size:.7rem;line-height:1.45;font-weight:600}
+  .duplicate-warning{grid-column:1/-1;margin-top:-2px;padding:11px 12px;border:1px solid #efb46f;border-radius:12px;background:#fff7eb;color:#865217;font-size:.75rem;line-height:1.55;font-weight:700}
+  .duplicate-warning strong{display:block;color:#9a4b12;font-size:.8rem}
+  .duplicate-warning ul{margin:5px 0;padding-left:18px}
+  .quick-select{width:100%;min-height:44px;border:1px solid #b8c8dc;border-radius:11px;background:#f7faff;color:#17345d;padding:0 11px;font-weight:800}
+  .generate-record{grid-column:1/-1;min-height:44px;border:1px solid #8bb0e5;border-radius:11px;background:#eaf2fd;color:#1557b0;font-weight:900;cursor:pointer}
+  .status-suggestion{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border:1px solid #f0cf7a;border-radius:12px;background:#fff9e8;color:#765610;font-size:.76rem;font-weight:800}
+  .status-suggestion button{min-height:36px;border:0;border-radius:9px;background:#ad7c08;color:#fff;padding:0 12px;font-weight:900;cursor:pointer}
+  .tracking-filter-bar{display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0}
+  .tracking-filter-bar label{color:#40506a;font-size:.78rem;font-weight:900;white-space:nowrap}
+  .tracking-filter-bar select{width:min(310px,100%);min-height:44px;border:1px solid #bdcad9;border-radius:11px;background:#fff;color:#17253d;padding:0 11px;font-weight:800}
+  .date-overview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0 22px}
+  .date-overview-item{padding:14px;border:1px solid #d7e1ee;border-radius:15px;background:#f8fbff}
+  .date-overview-item span{display:block;color:#6a778c;font-size:.72rem;font-weight:800}
+  .date-overview-item strong{display:block;margin-top:7px;color:#17345d;font-size:1rem;line-height:1.35}
+  .date-overview-item small{display:block;margin-top:4px;color:#6a778c;font-size:.7rem;line-height:1.4}
+  .date-overview-item.overdue{border-color:#efb4b7;background:#fff5f5}
+  .date-overview-item.overdue strong{color:#b82f38}
+  .timeline-date-divider{position:relative;z-index:2;display:flex;align-items:center;gap:10px;margin:10px 0 12px;padding-left:2px;color:#17345d;font-weight:900;font-size:1.02rem}
+  .timeline-date-divider::before{content:"";width:12px;height:12px;border:4px solid #1263df;border-radius:999px;background:white;box-shadow:0 0 0 4px #e7f0fd}
+  .timeline-date-divider::after{content:"";height:1px;flex:1;background:#dbe4ef}
+  .record-created-at{display:block;margin-top:3px;color:#7b8799;font-size:.68rem;font-weight:700}
+  .latest-action-summary{margin-top:12px;padding:10px 11px;border-radius:12px;background:#f4f8fd;color:#40506a;font-size:.75rem;line-height:1.45}
+  .latest-action-summary strong{display:block;color:#17345d;font-size:.76rem}
+  .latest-action-summary span{display:block;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   @media (max-width:700px){
     .detail-actions{justify-content:flex-start;width:100%}
     .detail-hero{align-items:flex-start;flex-direction:column}
     .attachment-grid{grid-template-columns:1fr 1fr}
     .record-head-actions{align-items:flex-start;flex-direction:column}
     .form-actions>*{flex:1}
+    .reason-picker,.contact-picker{grid-template-columns:1fr}
+    .picker-title,.generate-record,.status-suggestion{grid-column:1}
+    .picker-title,.status-suggestion{flex-direction:column}
+    .status-suggestion button{width:100%}
+    .tracking-filter-bar{align-items:stretch;flex-direction:column}
+    .tracking-filter-bar select{width:100%}
+    .date-overview{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px}
+    .date-overview-item{padding:12px}
   }
 `;
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(value: string, days: number) {
+  const date = new Date(`${value}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function normalizeWaterNumber(value: string) {
   return value.replace(/[\s-]/g, "").toUpperCase();
 }
 
-function formatDate(value: string) {
-  if (!value) return "未設定";
-  return value.replaceAll("-", "/");
+function parseDate(value: string) {
+  const normalized = value.trim().replaceAll("/", "-");
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return { year: Number(match[1]), month: match[2], day: match[3], iso: normalized };
+}
+
+function formatDate(value: string, withWeekday = false) {
+  const parsed = parseDate(value);
+  if (!parsed) return value || "未設定";
+  const dateText = `${parsed.year - 1911}/${parsed.month}/${parsed.day}`;
+  if (!withWeekday) return dateText;
+  const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
+  const weekday = weekdays[new Date(`${parsed.iso}T00:00:00`).getDay()];
+  return `${dateText}（${weekday}）`;
+}
+
+function formatChineseDate(value: string) {
+  const parsed = parseDate(value);
+  if (!parsed) return value;
+  return `${parsed.year - 1911}年${Number(parsed.month)}月${Number(parsed.day)}日`;
+}
+
+function createdAtLabel(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear() - 1911;
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `建檔：${year}/${month}/${day} ${hour}:${minute}`;
 }
 
 function isOverdue(value: string, status: string) {
   return Boolean(value && value < today() && status !== "已結案");
+}
+
+function activeFollowUpDate(item: InspectionCase) {
+  return item.records.find((record) => record.followUpDate)?.followUpDate || "";
+}
+
+function latestActionDate(item: InspectionCase) {
+  return item.records[0]?.date || item.receivedDate;
+}
+
+function matchesTrackingFilter(item: InspectionCase, trackingFilter: TrackingFilter) {
+  const nextDate = activeFollowUpDate(item);
+  const currentDate = today();
+  if (trackingFilter === "all") return true;
+  if (trackingFilter === "open") return item.status !== "已結案";
+  if (trackingFilter === "closed") return item.status === "已結案";
+  if (item.status === "已結案") return false;
+  if (trackingFilter === "today") return nextDate === currentDate;
+  if (trackingFilter === "overdue") return Boolean(nextDate && nextDate < currentDate);
+  if (trackingFilter === "threeDays") {
+    return Boolean(nextDate && nextDate >= currentDate && nextDate <= addDays(currentDate, 3));
+  }
+  if (trackingFilter === "noDate") return !nextDate;
+  if (trackingFilter === "inactive7") return latestActionDate(item) < addDays(currentDate, -7);
+  return true;
+}
+
+function mapCoordinates(value: string) {
+  const parts = value.split(",").map((part) => Number(part.trim()));
+  if (parts.length !== 2 || parts.some((part) => !Number.isFinite(part))) return value;
+  const [first, second] = parts;
+  if (Math.abs(first) > 90 && Math.abs(second) <= 90) return `${second},${first}`;
+  return `${first},${second}`;
 }
 
 function caseStatusLabel(item: InspectionCase) {
@@ -115,6 +313,63 @@ function categoryLabel(category: string) {
   if (category === "system31") return "3-1 畫面";
   if (category === "gis") return "圖資畫面";
   return "處理附件";
+}
+
+function inferReason(value: string) {
+  for (const [group, details] of Object.entries(reasonGroups)) {
+    const detail = details.find((option) => value.includes(option));
+    if (detail) return { group, detail };
+  }
+  return { group: value.trim() ? "其他" : "", detail: "" };
+}
+
+function recommendedStatus(result: string, nextStep: string, contactResult: string) {
+  const combined = `${result} ${nextStep} ${contactResult}`.trim();
+  if (!combined) return null;
+  if (combined.includes("結案") || combined.includes("無，案件可結案")) return "已結案";
+  if (
+    combined.includes("聯絡未果") ||
+    combined.includes("未接") ||
+    combined.includes("空號") ||
+    combined.includes("關機") ||
+    combined.includes("已讀未回")
+  ) {
+    return "聯絡未果";
+  }
+  if (combined.includes("複查")) return "待複查";
+  if (combined.includes("現勘")) return "待現勘";
+  if (combined.includes("等待用戶") || combined.includes("修繕") || combined.includes("回覆")) {
+    return "待用戶回覆";
+  }
+  return "處理中";
+}
+
+function stripTrailingPunctuation(value: string) {
+  return value.trim().replace(/[。；;，,\s]+$/g, "");
+}
+
+function buildFormalProcess(values: {
+  date: string;
+  method: string;
+  pointer: string;
+  contactPerson: string;
+  contactResult: string;
+  customerResponse: string;
+  result: string;
+  nextStep: string;
+  followUpDate: string;
+}) {
+  const parts: string[] = [`${formatChineseDate(values.date)}${values.method}`];
+  if (values.contactPerson) parts[0] += `，聯繫${values.contactPerson}`;
+  if (values.contactResult) parts[0] += `，聯絡結果為${values.contactResult}`;
+  if (values.customerResponse && values.customerResponse !== "其他") {
+    parts.push(`用戶表示${values.customerResponse}`);
+  }
+  if (values.pointer) parts.push(`現場抄得水表指針為${values.pointer}度`);
+  if (values.result) parts.push(stripTrailingPunctuation(values.result));
+  if (values.nextStep) parts.push(`後續${stripTrailingPunctuation(values.nextStep)}`);
+  if (values.followUpDate) parts.push(`預計於${formatChineseDate(values.followUpDate)}追蹤`);
+  return `${parts.filter(Boolean).join("。 ")}。`;
 }
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
@@ -152,7 +407,42 @@ function recordPayload(data: FormData) {
   };
 }
 
-function CaseFields({ item }: { item?: InspectionCase }) {
+function CaseFields({ item, cases }: { item?: InspectionCase; cases: InspectionCase[] }) {
+  const inferred = inferReason(item?.reason || "");
+  const [waterNumber, setWaterNumber] = useState(item?.waterNumber || "");
+  const [reasonGroup, setReasonGroup] = useState(inferred.group);
+  const [reasonDetail, setReasonDetail] = useState(inferred.detail);
+  const [reasonText, setReasonText] = useState(item?.reason || "");
+
+  const duplicateCases = useMemo(() => {
+    const normalized = normalizeWaterNumber(waterNumber);
+    if (!normalized) return [];
+    return cases.filter(
+      (existing) => existing.id !== item?.id && normalizeWaterNumber(existing.waterNumber) === normalized,
+    );
+  }, [cases, item?.id, waterNumber]);
+
+  function changeReasonGroup(value: string) {
+    setReasonGroup(value);
+    setReasonDetail("");
+    if (!value) return;
+    if (value === "其他") {
+      if (!reasonText || inferred.group !== "其他") setReasonText("");
+      return;
+    }
+    setReasonText(value);
+  }
+
+  function changeReasonDetail(value: string) {
+    setReasonDetail(value);
+    if (!reasonGroup) return;
+    if (value === "__other__") {
+      setReasonText(`${reasonGroup}－`);
+      return;
+    }
+    setReasonText(value ? `${reasonGroup}－${value}` : reasonGroup);
+  }
+
   return (
     <>
       <div className="form-section">
@@ -160,12 +450,32 @@ function CaseFields({ item }: { item?: InspectionCase }) {
         <div className="field-grid">
           <label>
             水號 <em>必填</em>
-            <input name="waterNumber" required inputMode="text" defaultValue={item?.waterNumber} />
+            <input
+              name="waterNumber"
+              required
+              inputMode="text"
+              value={waterNumber}
+              onChange={(event) => setWaterNumber(event.target.value)}
+            />
           </label>
           <label>
             姓名
             <input name="customerName" autoComplete="name" defaultValue={item?.customerName} />
           </label>
+          {duplicateCases.length > 0 && (
+            <div className="duplicate-warning">
+              <strong>此水號已有 {duplicateCases.length} 筆歷史案件，請確認是否為不同原因。</strong>
+              <ul>
+                {duplicateCases.slice(0, 4).map((existing) => (
+                  <li key={existing.id}>
+                    {existing.customerName || "未填姓名"}｜{caseStatusLabel(existing)}｜收件 {formatDate(existing.receivedDate)}
+                    {existing.reason ? `｜${existing.reason}` : ""}
+                  </li>
+                ))}
+              </ul>
+              <span>仍可繼續建立，不會阻止同一水號因不同原因分案。</span>
+            </div>
+          )}
           <label>
             電話
             <input name="phone" type="tel" autoComplete="tel" defaultValue={item?.phone} />
@@ -185,6 +495,7 @@ function CaseFields({ item }: { item?: InspectionCase }) {
               placeholder="120.000000,23.000000"
               defaultValue={item?.coordinates}
             />
+            <small className="field-hint">可直接貼公司格式「經度,緯度」，開啟 Google 地圖時會自動轉換。</small>
           </label>
           <label>
             收件日期
@@ -199,9 +510,45 @@ function CaseFields({ item }: { item?: InspectionCase }) {
       <div className="form-section">
         <h3>案件內容</h3>
         <div className="field-grid">
+          <div className="reason-picker">
+            <div className="picker-title">
+              <strong>案件原因快速分類</strong>
+              <small>先選主原因與細項，下方完整原因仍可補充。</small>
+            </div>
+            <label>
+              主原因
+              <select value={reasonGroup} onChange={(event) => changeReasonGroup(event.target.value)}>
+                <option value="">請選擇主原因</option>
+                {Object.keys(reasonGroups).map((group) => (
+                  <option key={group} value={group}>{group}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              細項
+              <select
+                value={reasonDetail}
+                onChange={(event) => changeReasonDetail(event.target.value)}
+                disabled={!reasonGroup || reasonGroup === "其他"}
+              >
+                <option value="">{reasonGroup === "其他" ? "請在下方自行輸入" : "請選擇細項"}</option>
+                {(reasonGroups[reasonGroup] || []).map((detail) => (
+                  <option key={detail} value={detail}>{detail}</option>
+                ))}
+                {reasonGroup && reasonGroup !== "其他" && <option value="__other__">其他／自行輸入</option>}
+              </select>
+            </label>
+          </div>
           <label className="wide">
-            案件原因
-            <textarea name="reason" rows={4} defaultValue={item?.reason} />
+            完整案件原因
+            <textarea
+              name="reason"
+              rows={4}
+              value={reasonText}
+              onChange={(event) => setReasonText(event.target.value)}
+              placeholder="可補充案件來源、特殊情形或其他說明"
+              required
+            />
           </label>
           <label>
             案件狀態
@@ -250,18 +597,72 @@ function CaseFields({ item }: { item?: InspectionCase }) {
   );
 }
 
-function RecordFields({ record }: { record?: FollowUp }) {
+function RecordFields({
+  record,
+  currentStatus,
+  busy = false,
+  onApplySuggestedStatus,
+}: {
+  record?: FollowUp;
+  currentStatus?: string;
+  busy?: boolean;
+  onApplySuggestedStatus?: (status: string) => void | Promise<void>;
+}) {
+  const [date, setDate] = useState(record?.date || today());
+  const [method, setMethod] = useState(record?.method || "現場勘查");
+  const [pointer, setPointer] = useState(record?.pointer || "");
+  const [followUpDate, setFollowUpDate] = useState(record?.followUpDate || "");
+  const [process, setProcess] = useState(record?.process || "");
+  const [result, setResult] = useState(record?.result || "");
+  const [nextStep, setNextStep] = useState(record?.nextStep || "");
+  const [contactPerson, setContactPerson] = useState("");
+  const [contactResult, setContactResult] = useState("");
+  const [customerResponse, setCustomerResponse] = useState("");
+
+  const statusSuggestion = useMemo(
+    () => recommendedStatus(result, nextStep, contactResult),
+    [contactResult, nextStep, result],
+  );
+
+  function applyQuickValue(
+    value: string,
+    setter: (value: string) => void,
+    currentValue: string,
+    append = false,
+  ) {
+    if (!value) return;
+    setter(append && currentValue.trim() ? `${currentValue.trim()}\n${value}` : value);
+  }
+
+  function generateProcess() {
+    const generated = buildFormalProcess({
+      date,
+      method,
+      pointer,
+      contactPerson,
+      contactResult,
+      customerResponse,
+      result,
+      nextStep,
+      followUpDate,
+    });
+    if (process.trim() && process.trim() !== generated && !window.confirm("將依選單重新產生處理經過，原文字會被取代。確定繼續嗎？")) {
+      return;
+    }
+    setProcess(generated);
+  }
+
   return (
     <div className="field-grid">
       <label>
         日期
-        <input name="date" type="date" defaultValue={record?.date || today()} required />
+        <input name="date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
       </label>
       <label>
         處理方式
-        <select name="method" defaultValue={record?.method || "現場勘查"}>
-          {methods.map((method) => (
-            <option key={method}>{method}</option>
+        <select name="method" value={method} onChange={(event) => setMethod(event.target.value)}>
+          {methods.map((methodOption) => (
+            <option key={methodOption}>{methodOption}</option>
           ))}
         </select>
       </label>
@@ -271,24 +672,107 @@ function RecordFields({ record }: { record?: FollowUp }) {
           name="pointer"
           inputMode="decimal"
           placeholder="例如 676"
-          defaultValue={record?.pointer}
+          value={pointer}
+          onChange={(event) => setPointer(event.target.value)}
         />
       </label>
       <label>
         下次追蹤日期
-        <input name="followUpDate" type="date" defaultValue={record?.followUpDate} />
+        <input
+          name="followUpDate"
+          type="date"
+          value={followUpDate}
+          onChange={(event) => setFollowUpDate(event.target.value)}
+        />
       </label>
+
+      <div className="contact-picker">
+        <div className="picker-title">
+          <strong>聯絡紀錄快速選擇</strong>
+          <small>沒有聯絡用戶時可以全部留白。</small>
+        </div>
+        <label>
+          聯絡對象
+          <select value={contactPerson} onChange={(event) => setContactPerson(event.target.value)}>
+            <option value="">未選擇</option>
+            {contactPersonOptions.map((option) => <option key={option}>{option}</option>)}
+          </select>
+        </label>
+        <label>
+          聯絡結果
+          <select value={contactResult} onChange={(event) => setContactResult(event.target.value)}>
+            <option value="">未選擇</option>
+            {contactResultOptions.map((option) => <option key={option}>{option}</option>)}
+          </select>
+        </label>
+        <label>
+          用戶回覆
+          <select value={customerResponse} onChange={(event) => setCustomerResponse(event.target.value)}>
+            <option value="">未選擇</option>
+            {customerResponseOptions.map((option) => <option key={option}>{option}</option>)}
+          </select>
+        </label>
+        <button type="button" className="generate-record" onClick={generateProcess}>
+          產生／更新正式處理紀錄
+        </button>
+        {statusSuggestion && statusSuggestion !== currentStatus && onApplySuggestedStatus && (
+          <div className="status-suggestion">
+            <span>依本次結果，建議案件狀態改為「{statusSuggestion}」</span>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void onApplySuggestedStatus(statusSuggestion)}
+            >
+              套用建議狀態
+            </button>
+          </div>
+        )}
+      </div>
+
       <label className="wide">
         處理經過
-        <textarea name="process" rows={4} defaultValue={record?.process} />
+        <select
+          className="quick-select"
+          defaultValue=""
+          onChange={(event) => {
+            applyQuickValue(event.target.value, setProcess, process, true);
+            event.target.value = "";
+          }}
+        >
+          <option value="">帶入常用處理經過</option>
+          {processOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+        <textarea name="process" rows={4} value={process} onChange={(event) => setProcess(event.target.value)} />
       </label>
       <label className="wide">
         處理結果
-        <textarea name="result" rows={3} defaultValue={record?.result} />
+        <select
+          className="quick-select"
+          defaultValue=""
+          onChange={(event) => {
+            applyQuickValue(event.target.value, setResult, result);
+            event.target.value = "";
+          }}
+        >
+          <option value="">帶入常用處理結果</option>
+          {resultOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+        <textarea name="result" rows={3} value={result} onChange={(event) => setResult(event.target.value)} />
       </label>
       <label className="wide">
         下一步
-        <textarea name="nextStep" rows={3} defaultValue={record?.nextStep} />
+        <select
+          className="quick-select"
+          defaultValue=""
+          onChange={(event) => {
+            applyQuickValue(event.target.value, setNextStep, nextStep);
+            event.target.value = "";
+          }}
+        >
+          <option value="">帶入常用下一步</option>
+          {nextStepOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+        <textarea name="nextStep" rows={3} value={nextStep} onChange={(event) => setNextStep(event.target.value)} />
       </label>
       <label className="wide media-input">
         照片或影片
@@ -343,12 +827,14 @@ export default function InspectionApp({ userName }: { userName: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("全部");
+  const [trackingFilter, setTrackingFilter] = useState<TrackingFilter>("all");
   const [view, setView] = useState<"list" | "new" | "detail">("list");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [editingCase, setEditingCase] = useState(false);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
+  const [recordFormVersion, setRecordFormVersion] = useState(0);
 
   const selected = cases.find((item) => item.id === selectedId) ?? null;
 
@@ -386,6 +872,7 @@ export default function InspectionApp({ userName }: { userName: string }) {
     const needle = query.trim().toLowerCase().replace(/[\s-]/g, "");
     return cases.filter((item) => {
       const matchFilter = filter === "全部" || item.status === filter;
+      const matchTracking = matchesTrackingFilter(item, trackingFilter);
       const haystack = [
         item.waterNumber,
         item.customerName,
@@ -397,24 +884,21 @@ export default function InspectionApp({ userName }: { userName: string }) {
         .join(" ")
         .toLowerCase()
         .replace(/[\s-]/g, "");
-      return matchFilter && (!needle || haystack.includes(needle));
+      return matchFilter && matchTracking && (!needle || haystack.includes(needle));
     });
-  }, [cases, filter, query]);
+  }, [cases, filter, query, trackingFilter]);
 
   const counts = useMemo(
     () => ({
       open: cases.filter((item) => item.status !== "已結案").length,
-      follow: cases.filter((item) => {
-        const next = item.records[0]?.followUpDate;
-        return next && next === today() && item.status !== "已結案";
-      }).length,
-      overdue: cases.filter((item) =>
-        isOverdue(item.records[0]?.followUpDate ?? "", item.status),
-      ).length,
+      follow: cases.filter((item) => activeFollowUpDate(item) === today() && item.status !== "已結案").length,
+      overdue: cases.filter((item) => isOverdue(activeFollowUpDate(item), item.status)).length,
       closed: cases.filter((item) => item.status === "已結案").length,
     }),
     [cases],
   );
+
+  const trackingLabel = trackingOptions.find(([value]) => value === trackingFilter)?.[1] || "全部追蹤狀態";
 
   function openCase(id: string) {
     setSelectedId(id);
@@ -525,6 +1009,7 @@ export default function InspectionApp({ userName }: { userName: string }) {
       );
       await uploadFiles(selected.id, result.record.id, data.getAll("media") as File[], "record");
       form.reset();
+      setRecordFormVersion((version) => version + 1);
       await loadCases(selected.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "紀錄新增失敗");
@@ -647,19 +1132,43 @@ export default function InspectionApp({ userName }: { userName: string }) {
       {view === "list" && (
         <>
           <section className="summary-grid" aria-label="案件摘要">
-            <button className="summary-card blue" onClick={() => setFilter("全部")}>
+            <button
+              className="summary-card blue"
+              onClick={() => {
+                setFilter("全部");
+                setTrackingFilter("open");
+              }}
+            >
               <span>未結案</span>
               <strong>{counts.open}</strong>
             </button>
-            <button className="summary-card amber" onClick={() => setFilter("全部")}>
+            <button
+              className="summary-card amber"
+              onClick={() => {
+                setFilter("全部");
+                setTrackingFilter("today");
+              }}
+            >
               <span>今日追蹤</span>
               <strong>{counts.follow}</strong>
             </button>
-            <button className="summary-card red" onClick={() => setFilter("全部")}>
+            <button
+              className="summary-card red"
+              onClick={() => {
+                setFilter("全部");
+                setTrackingFilter("overdue");
+              }}
+            >
               <span>已逾期</span>
               <strong>{counts.overdue}</strong>
             </button>
-            <button className="summary-card green" onClick={() => setFilter("已結案")}>
+            <button
+              className="summary-card green"
+              onClick={() => {
+                setFilter("已結案");
+                setTrackingFilter("closed");
+              }}
+            >
               <span>已結案</span>
               <strong>{counts.closed}</strong>
             </button>
@@ -679,11 +1188,26 @@ export default function InspectionApp({ userName }: { userName: string }) {
                 <button
                   key={status}
                   className={filter === status ? "filter active" : "filter"}
-                  onClick={() => setFilter(status)}
+                  onClick={() => {
+                    setFilter(status);
+                    setTrackingFilter(status === "已結案" ? "closed" : "all");
+                  }}
                 >
                   {status}
                 </button>
               ))}
+            </div>
+            <div className="tracking-filter-bar">
+              <label htmlFor="tracking-filter">追蹤篩選</label>
+              <select
+                id="tracking-filter"
+                value={trackingFilter}
+                onChange={(event) => setTrackingFilter(event.target.value as TrackingFilter)}
+              >
+                {trackingOptions.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
             </div>
           </section>
 
@@ -691,7 +1215,10 @@ export default function InspectionApp({ userName }: { userName: string }) {
             <div className="section-heading">
               <div>
                 <p className="eyebrow">案件清單</p>
-                <h2>{filter === "全部" ? "全部案件" : filter}</h2>
+                <h2>
+                  {filter === "全部" ? "全部案件" : filter}
+                  {trackingFilter !== "all" ? `｜${trackingLabel}` : ""}
+                </h2>
               </div>
               <span>{visibleCases.length} 件</span>
             </div>
@@ -714,7 +1241,8 @@ export default function InspectionApp({ userName }: { userName: string }) {
             ) : (
               <div className="cards">
                 {visibleCases.map((item) => {
-                  const nextDate = item.records[0]?.followUpDate ?? "";
+                  const nextDate = activeFollowUpDate(item);
+                  const latestRecord = item.records[0];
                   return (
                     <button key={item.id} className="case-card" onClick={() => openCase(item.id)}>
                       <div className="case-card-top">
@@ -731,6 +1259,12 @@ export default function InspectionApp({ userName }: { userName: string }) {
                           </span>
                         )}
                       </div>
+                      {latestRecord && (
+                        <div className="latest-action-summary">
+                          <strong>最近處理：{formatDate(latestRecord.date)}・{latestRecord.method}</strong>
+                          <span>{latestRecord.process || latestRecord.result || "未填處理摘要"}</span>
+                        </div>
+                      )}
                     </button>
                   );
                 })}
@@ -754,7 +1288,7 @@ export default function InspectionApp({ userName }: { userName: string }) {
             <p>先建立基本資料，之後可持續加入每次處理紀錄。</p>
           </div>
           <form onSubmit={createCase} className="data-form">
-            <CaseFields />
+            <CaseFields cases={cases} />
             <button className="primary submit" disabled={busy}>
               {busy ? "正在建立…" : "建立案件"}
             </button>
@@ -800,10 +1334,31 @@ export default function InspectionApp({ userName }: { userName: string }) {
             </div>
           </div>
 
+          <div className="date-overview" aria-label="案件日期摘要">
+            <div className="date-overview-item">
+              <span>收件日期</span>
+              <strong>{formatDate(selected.receivedDate)}</strong>
+            </div>
+            <div className="date-overview-item">
+              <span>最近處理</span>
+              <strong>{selected.records[0] ? formatDate(selected.records[0].date) : "尚無紀錄"}</strong>
+              {selected.records[0] && <small>{selected.records[0].method}</small>}
+            </div>
+            <div className={isOverdue(activeFollowUpDate(selected), selected.status) ? "date-overview-item overdue" : "date-overview-item"}>
+              <span>下次追蹤</span>
+              <strong>{activeFollowUpDate(selected) ? formatDate(activeFollowUpDate(selected)) : "未設定"}</strong>
+              {isOverdue(activeFollowUpDate(selected), selected.status) && <small>已逾期，請優先處理</small>}
+            </div>
+            <div className="date-overview-item">
+              <span>結案日期</span>
+              <strong>{selected.status === "已結案" && selected.records[0] ? formatDate(selected.records[0].date) : "未結案"}</strong>
+            </div>
+          </div>
+
           {editingCase && (
             <form key={selected.updatedAt} onSubmit={saveCase} className="edit-panel data-form">
               <h3>修改案件基本資料</h3>
-              <CaseFields item={selected} />
+              <CaseFields item={selected} cases={cases} />
               <div className="form-actions">
                 <button type="button" className="secondary" onClick={() => setEditingCase(false)}>
                   取消
@@ -832,7 +1387,7 @@ export default function InspectionApp({ userName }: { userName: string }) {
                   <dd>
                     {selected.coordinates ? (
                       <a
-                        href={`https://maps.google.com/?q=${encodeURIComponent(selected.coordinates)}`}
+                        href={`https://maps.google.com/?q=${encodeURIComponent(mapCoordinates(selected.coordinates))}`}
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -881,8 +1436,14 @@ export default function InspectionApp({ userName }: { userName: string }) {
                 <div className="timeline-empty">尚無處理紀錄，請在下方新增第一次處理。</div>
               ) : (
                 <div className="timeline">
-                  {selected.records.map((record) => (
-                    <article key={record.id} className="timeline-item">
+                  {selected.records.map((record, index) => {
+                    const previousDate = selected.records[index - 1]?.date;
+                    return (
+                      <Fragment key={record.id}>
+                        {record.date !== previousDate && (
+                          <div className="timeline-date-divider">{formatDate(record.date, true)}</div>
+                        )}
+                        <article className="timeline-item">
                       <div className="timeline-dot" />
                       <div className="timeline-card">
                         {editingRecordId === record.id ? (
@@ -905,7 +1466,7 @@ export default function InspectionApp({ userName }: { userName: string }) {
                                 </button>
                               </div>
                             </div>
-                            <RecordFields record={record} />
+                            <RecordFields record={record} currentStatus={selected.status} busy={busy} onApplySuggestedStatus={updateStatus} />
                             {record.attachments.length > 0 && (
                               <div className="mini-upload">
                                 <h4>原有附件</h4>
@@ -923,6 +1484,9 @@ export default function InspectionApp({ userName }: { userName: string }) {
                               <div className="record-head">
                                 <strong>{record.method}</strong>
                                 <time>{formatDate(record.date)}</time>
+                                {createdAtLabel(record.createdAt) && (
+                                  <small className="record-created-at">{createdAtLabel(record.createdAt)}</small>
+                                )}
                               </div>
                               <div className="record-actions">
                                 <button
@@ -980,12 +1544,14 @@ export default function InspectionApp({ userName }: { userName: string }) {
                           </>
                         )}
                       </div>
-                    </article>
-                  ))}
+                        </article>
+                      </Fragment>
+                    );
+                  })}
                 </div>
               )}
 
-              <form onSubmit={addRecord} className="record-form">
+              <form key={recordFormVersion} onSubmit={addRecord} className="record-form">
                 <div className="record-form-title">
                   <span>＋</span>
                   <div>
@@ -993,7 +1559,7 @@ export default function InspectionApp({ userName }: { userName: string }) {
                     <p>每次聯絡、現勘或回覆都記在同一案件。</p>
                   </div>
                 </div>
-                <RecordFields />
+                <RecordFields currentStatus={selected.status} busy={busy} onApplySuggestedStatus={updateStatus} />
                 <button className="primary submit" disabled={busy}>
                   {busy ? "正在儲存…" : "儲存本次紀錄"}
                 </button>
