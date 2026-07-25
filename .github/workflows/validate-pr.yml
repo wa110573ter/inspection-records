@@ -92,6 +92,16 @@ jobs:
             artifact.log
           if-no-files-found: ignore
 
+      - name: Upload editable source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: editable-source
+          path: |
+            app/inspection-app.tsx
+            app/page.tsx
+          if-no-files-found: error
+
       - name: Final validation gate
         if: always()
         shell: bash
