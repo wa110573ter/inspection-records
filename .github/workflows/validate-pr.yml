@@ -41,6 +41,17 @@ jobs:
           git commit -m "將追蹤與下拉功能改為原生表單"
           git push
 
+      - name: Remove source transport files
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/native-workflow-fix'
+        shell: bash
+        run: |
+          python scripts/cleanup-native-payload.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "移除原生表單傳輸暫存檔"
+          git push
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
