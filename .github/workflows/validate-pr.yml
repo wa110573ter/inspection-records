@@ -23,9 +23,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
 
       - name: Apply native source payload
-        if: github.event_name == 'push' && github.ref == 'refs/heads/agent/native-workflow-fix'
+        if: (github.event_name == 'pull_request' && github.head_ref == 'agent/native-workflow-fix') || (github.event_name == 'push' && github.ref == 'refs/heads/agent/native-workflow-fix')
         shell: bash
         run: |
           python scripts/apply-native-payload.py
