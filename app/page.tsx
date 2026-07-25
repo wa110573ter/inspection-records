@@ -9,6 +9,7 @@ export default async function Home() {
   return (
     <>
       <MobileUploadFix />
+      {/* 日期、追蹤與下拉流程皆由 InspectionApp 原生管理。 */}
       <InspectionApp userName={user.displayName} />
       <a
         href="/import"
