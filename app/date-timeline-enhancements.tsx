@@ -404,8 +404,10 @@ export default function DateTimelineEnhancements() {
   useEffect(() => {
     let cases: InspectionCase[] = [];
     let refreshTimer: number | null = null;
+    let observer: MutationObserver | null = null;
 
     const enhance = () => {
+      observer?.disconnect();
       enhanceSelectOptions();
       enhanceTextFields();
       enhanceCustomStatus();
@@ -413,6 +415,7 @@ export default function DateTimelineEnhancements() {
       renderDateOverview(cases);
       renderCreatedTimes(cases);
       renderCaseCardSummaries(cases);
+      observer?.observe(document.body, { childList: true, subtree: true });
     };
 
     const refreshCases = async () => {
@@ -435,7 +438,7 @@ export default function DateTimelineEnhancements() {
     enhance();
     void refreshCases();
 
-    const observer = new MutationObserver(() => enhance());
+    observer = new MutationObserver(() => enhance());
     observer.observe(document.body, { childList: true, subtree: true });
 
     const actionListener = (event: Event) => {
@@ -448,7 +451,7 @@ export default function DateTimelineEnhancements() {
     document.addEventListener("submit", scheduleRefresh, true);
 
     return () => {
-      observer.disconnect();
+      observer?.disconnect();
       document.removeEventListener("click", actionListener, true);
       document.removeEventListener("submit", scheduleRefresh, true);
       if (refreshTimer !== null) window.clearTimeout(refreshTimer);
