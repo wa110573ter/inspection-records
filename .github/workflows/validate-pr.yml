@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - agent/date-timeline-dropdowns
+      - agent/post-deploy-smoke
   workflow_dispatch:
 
 permissions:
@@ -80,6 +81,42 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit "$code"
 
+      - name: Production Site HTTP smoke test
+        id: site
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          status=$(curl \
+            --silent \
+            --show-error \
+            --max-time 30 \
+            --output /dev/null \
+            --dump-header site-headers.txt \
+            --write-out '%{http_code}' \
+            'https://inspection-records.wa110573ter.chatgpt.site/')
+          curl_code=$?
+          {
+            echo "curl_exit=$curl_code"
+            echo "http_status=$status"
+            echo "headers:"
+            cat site-headers.txt 2>/dev/null || true
+          } | tee site-smoke.log
+          if [ "$curl_code" -ne 0 ]; then
+            echo "exit_code=$curl_code" >> "$GITHUB_OUTPUT"
+            exit "$curl_code"
+          fi
+          case "$status" in
+            200|301|302|303|307|308)
+              echo "exit_code=0" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+            *)
+              echo "exit_code=1" >> "$GITHUB_OUTPUT"
+              exit 1
+              ;;
+          esac
+
       - name: Upload validation reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -90,6 +127,8 @@ jobs:
             eslint.log
             test.log
             artifact.log
+            site-smoke.log
+            site-headers.txt
           if-no-files-found: ignore
 
       - name: Final validation gate
@@ -100,7 +139,9 @@ jobs:
           echo "ESLint: ${{ steps.lint.outputs.exit_code }}"
           echo "Tests: ${{ steps.test.outputs.exit_code }}"
           echo "Artifact: ${{ steps.artifact.outputs.exit_code }}"
+          echo "Site: ${{ steps.site.outputs.exit_code }}"
           test "${{ steps.typecheck.outputs.exit_code }}" = "0"
           test "${{ steps.lint.outputs.exit_code }}" = "0"
           test "${{ steps.test.outputs.exit_code }}" = "0"
           test "${{ steps.artifact.outputs.exit_code }}" = "0"
+          test "${{ steps.site.outputs.exit_code }}" = "0"
