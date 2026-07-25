@@ -416,12 +416,14 @@ function enhanceTrackingFilter(cases: InspectionCase[]) {
       option.textContent = text;
       select.append(option);
     });
-    select.addEventListener("change", () => applyTrackingFilter(cases, select.value));
     bar.append(label, select);
     toolbar.append(bar);
   }
   const select = bar.querySelector<HTMLSelectElement>('select[data-tracking-filter="true"]');
-  if (select) applyTrackingFilter(cases, select.value);
+  if (select) {
+    select.onchange = () => applyTrackingFilter(cases, select.value);
+    applyTrackingFilter(cases, select.value);
+  }
 }
 
 function enhanceDuplicateWarning(cases: InspectionCase[]) {
@@ -456,11 +458,9 @@ function enhanceDuplicateWarning(cases: InspectionCase[]) {
     warning.append(strong, list, note);
   };
 
-  if (!input.dataset.duplicateEnhanced) {
-    input.dataset.duplicateEnhanced = "true";
-    input.addEventListener("input", update);
-    input.addEventListener("change", update);
-  }
+  input.dataset.duplicateEnhanced = "true";
+  input.oninput = update;
+  input.onchange = update;
   update();
 }
 
