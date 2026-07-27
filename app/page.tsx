@@ -1,5 +1,6 @@
 import { requireChatGPTUser } from "./chatgpt-auth";
 import InspectionApp from "./inspection-app";
+import MeterNumberImportFix from "./meter-number-import-fix";
 import MobileUploadFix from "./mobile-upload-fix";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ export default async function Home() {
   return (
     <>
       <MobileUploadFix />
+      <MeterNumberImportFix />
       {/* 日期、追蹤與下拉流程皆由 InspectionApp 原生管理。 */}
       <InspectionApp userName={user.displayName} />
       <a
