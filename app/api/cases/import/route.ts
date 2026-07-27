@@ -1,6 +1,6 @@
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { getDb } from "../../../../db";
-import { cases } from "../../../../db/schema";
+import { caseRecords, cases } from "../../../../db/schema";
 
 const allowedStatuses = new Set([
   "待處理",
@@ -37,6 +37,17 @@ function normalizeDate(value: string) {
   }
 
   return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function localDate() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
 }
 
 type ImportRow = Record<string, unknown>;
@@ -106,6 +117,7 @@ export async function POST(request: Request) {
         receivedDate: receivedDate || "",
         status,
         customStatus: clean(row.customStatus),
+        rawText: clean(row.rawText),
         createdAt: now,
         updatedAt: now,
       };
@@ -122,8 +134,24 @@ export async function POST(request: Request) {
     }
 
     const db = getDb();
-    for (let index = 0; index < values.length; index += 50) {
-      await db.insert(cases).values(values.slice(index, index + 50));
+    for (const value of values) {
+      const { rawText, ...caseValue } = value;
+      await db.insert(cases).values(caseValue);
+      if (rawText) {
+        await db.insert(caseRecords).values({
+          id: crypto.randomUUID(),
+          caseId: value.id,
+          ownerEmail: user.email,
+          date: value.receivedDate || localDate(),
+          method: "31畫面匯入",
+          pointer: "",
+          process: `【31畫面完整原始資料】\n${rawText}`,
+          result: "已自動擷取重要欄位，完整原文另存保留",
+          nextStep: "請核對擷取欄位；後續新增紀錄不會覆蓋本筆原始資料",
+          followUpDate: "",
+          createdAt: now,
+        });
+      }
     }
 
     return Response.json({ imported: values.length }, { status: 201 });
