@@ -63,7 +63,7 @@ function emptyRow(): ImportRow {
 }
 
 function normalizeHeader(value: string) {
-  return value.replace(/^\uFEFF/, "").trim().toLowerCase().replace(/[\s_\-()（）]/g, "");
+  return value.replace(/^\uFEFF/, "").trim().toLowerCase().replace(/[\s_\-()（）:：]/g, "");
 }
 
 function parseDelimited(text: string) {
@@ -103,23 +103,30 @@ function parseImportRows(text: string) {
 }
 
 function cleanToken(value: string) {
-  return value.replace(/^[\s:：]+|[\s]+$/g, "");
+  return value.replace(/^[\s:：]+|[\s:：]+$/g, "");
 }
 
 function extractValue(text: string, labels: string[]) {
   const tokens = text.split(/[\t\r\n]+/).map(cleanToken).filter(Boolean);
+  const normalizedLabels = labels.map(normalizeHeader);
+
   for (let index = 0; index < tokens.length; index += 1) {
-    const normalized = normalizeHeader(tokens[index]);
-    if (labels.some((label) => normalized === normalizeHeader(label))) {
-      for (let next = index + 1; next < Math.min(tokens.length, index + 4); next += 1) {
-        const candidate = cleanToken(tokens[next]);
-        if (candidate && !labels.some((label) => normalizeHeader(candidate) === normalizeHeader(label))) return candidate;
-      }
+    const token = tokens[index];
+    const normalized = normalizeHeader(token);
+    const matchingLabel = normalizedLabels.find((label) => normalized === label);
+    if (!matchingLabel) continue;
+
+    for (let next = index + 1; next < Math.min(tokens.length, index + 4); next += 1) {
+      const candidate = cleanToken(tokens[next]);
+      if (!candidate) continue;
+      if (normalizedLabels.includes(normalizeHeader(candidate))) continue;
+      return candidate;
     }
   }
+
   for (const label of labels) {
-    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const match = text.match(new RegExp(`${escaped}\\s*[:：]?\\s*([^\\t\\r\\n]+)`, "i"));
+    const spacedLabel = label.split("").map((character) => `${character}\\s*`).join("");
+    const match = text.match(new RegExp(`${spacedLabel}[:：]?\\s*(?:\\r?\\n\\s*)?([^\\t\\r\\n]+)`, "i"));
     if (match?.[1]) return cleanToken(match[1]);
   }
   return "";
@@ -134,10 +141,10 @@ function parse31(text: string) {
     if (match) item.waterNumber = match[0];
   }
   item.customerName = extractValue(text, ["用戶姓名", "用戶名稱", "姓名", "戶名", "用水人姓名"]);
-  item.phone = extractValue(text, ["行動電話", "聯絡電話", "電話", "手機", "電話號碼"]);
-  item.address = extractValue(text, ["用水地址", "裝置地址", "地址", "通訊地址"]);
+  item.phone = extractValue(text, ["行動電話", "聯絡電話", "用戶電話", "電話", "手機", "電話號碼"]);
+  item.address = extractValue(text, ["用水地址", "裝置地址", "住址", "地址", "通訊地址"]);
   item.coordinates = extractValue(text, ["座標", "經緯度", "X/Y座標", "X座標"]);
-  item.meterNumber = extractValue(text, ["表號", "水表號碼", "量水器號碼", "水表編號"]);
+  item.meterNumber = extractValue(text, ["水表號碼", "水表編號", "量水器號碼", "表號"]);
   item.rawText = text.trim();
   if (!item.waterNumber) return { rows: [item], error: "目前未辨識到水號，請確認貼上的是完整 31 畫面；其他原始文字尚未送出。" };
   return { rows: [item], error: "" };
