@@ -5,6 +5,23 @@ import MobileUploadFix from "./mobile-upload-fix";
 
 export const dynamic = "force-dynamic";
 
+const floatingLink = {
+  position: "fixed" as const,
+  left: 20,
+  zIndex: 30,
+  minHeight: 48,
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "0 17px",
+  border: "1px solid #b8c9de",
+  borderRadius: 15,
+  background: "white",
+  color: "#1263df",
+  boxShadow: "0 8px 22px rgba(17, 36, 65, 0.14)",
+  fontWeight: 800,
+  textDecoration: "none",
+};
+
 export default async function Home() {
   const user = await requireChatGPTUser("/");
   return (
@@ -13,26 +30,10 @@ export default async function Home() {
       <MeterNumberImportFix />
       {/* 日期、追蹤與下拉流程皆由 InspectionApp 原生管理。 */}
       <InspectionApp userName={user.displayName} />
-      <a
-        href="/import"
-        style={{
-          position: "fixed",
-          left: 20,
-          bottom: 26,
-          zIndex: 30,
-          minHeight: 48,
-          display: "inline-flex",
-          alignItems: "center",
-          padding: "0 17px",
-          border: "1px solid #b8c9de",
-          borderRadius: 15,
-          background: "white",
-          color: "#1263df",
-          boxShadow: "0 8px 22px rgba(17, 36, 65, 0.14)",
-          fontWeight: 800,
-          textDecoration: "none",
-        }}
-      >
+      <a href="/adjustment" style={{ ...floatingLink, bottom: 86 }}>
+        改單 ODS
+      </a>
+      <a href="/import" style={{ ...floatingLink, bottom: 26 }}>
         批次匯入
       </a>
     </>
