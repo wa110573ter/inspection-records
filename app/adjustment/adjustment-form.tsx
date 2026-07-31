@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import Link from "next/link";
+import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 
 type CaseType = "misread" | "leak";
 type FormState = Record<string, string>;
@@ -16,7 +17,7 @@ const initialState: FormState = {
   address: "",
   phone: "",
   caseReason: "抄表員誤抄",
-  inspectionDate: new Date().toISOString().slice(0, 10),
+  inspectionDate: localDate(),
   diameter: "",
   waterType: "",
   period1: "",
@@ -47,6 +48,14 @@ const initialState: FormState = {
   normalCleaningFee2: "",
   paymentMethod: "改單後通知用戶繳費",
 };
+
+function localDate() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 function normalizeWaterNumber(value: string) {
   return value.replace(/[\s-]/g, "").toUpperCase();
@@ -90,7 +99,7 @@ function Field({
         value={value}
         required={required}
         inputMode={inputMode}
-        onChange={(event) => onChange(name, event.target.value)}
+        onChange={(event: ChangeEvent<HTMLInputElement>) => onChange(name, event.target.value)}
       />
     </label>
   );
@@ -114,6 +123,13 @@ export default function AdjustmentForm() {
       leakReduction: number(form.abnormalCleaningFee) - normalAverage,
     };
   }, [form]);
+
+  const settlementLabel = totals.difference > 0
+    ? "應退／減收"
+    : totals.difference < 0
+      ? "應補收"
+      : "無差額";
+  const settlementAmount = Math.abs(totals.difference);
 
   const update = (name: string, value: string) => {
     setForm((current) => ({ ...current, [name]: value }));
@@ -179,7 +195,7 @@ export default function AdjustmentForm() {
           <h1>改單 ODS 產生器</h1>
           <p>貼一次31畫面，補上台水網站試算結果後，直接下載正式版面 ODS。</p>
         </div>
-        <a href="/" className="back">返回案件追蹤</a>
+        <Link href="/" className="back">返回案件追蹤</Link>
       </header>
 
       <form onSubmit={submit}>
@@ -191,7 +207,7 @@ export default function AdjustmentForm() {
           </div>
           <label className="field full">
             <span>31畫面全文</span>
-            <textarea value={form.raw31} onChange={(event) => update("raw31", event.target.value)} placeholder="在31畫面按 Ctrl+A、Ctrl+C，再貼到這裡。" />
+            <textarea value={form.raw31} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => update("raw31", event.target.value)} placeholder="在31畫面按 Ctrl+A、Ctrl+C，再貼到這裡。" />
           </label>
           <button type="button" className="secondary" onClick={parse31}>自動擷取並帶入</button>
         </section>
@@ -209,7 +225,7 @@ export default function AdjustmentForm() {
             <Field label="口徑" name="diameter" value={form.diameter} onChange={update} inputMode="numeric" />
             <Field label="種別／表況" name="waterType" value={form.waterType} onChange={update} />
             <Field label="案件原因" name="caseReason" value={form.caseReason} onChange={update} />
-            <label className="field"><span>稽查日期 *</span><input type="date" value={form.inspectionDate} required onChange={(event) => update("inspectionDate", event.target.value)} /></label>
+            <label className="field"><span>稽查日期 *</span><input type="date" value={form.inspectionDate} required onChange={(event: ChangeEvent<HTMLInputElement>) => update("inspectionDate", event.target.value)} /></label>
           </div>
         </section>
 
@@ -219,9 +235,9 @@ export default function AdjustmentForm() {
             <strong>期別</strong><strong>指針</strong><strong>用水量</strong>
             {[1, 2, 3].map((row) => (
               <div className="period-row" key={row}>
-                <input value={form[`period${row}`]} onChange={(event) => update(`period${row}`, event.target.value)} />
-                <input inputMode="numeric" value={form[`pointer${row}`]} onChange={(event) => update(`pointer${row}`, event.target.value)} />
-                <input inputMode="numeric" value={form[`usage${row}`]} onChange={(event) => update(`usage${row}`, event.target.value)} />
+                <input value={form[`period${row}`]} onChange={(event: ChangeEvent<HTMLInputElement>) => update(`period${row}`, event.target.value)} />
+                <input inputMode="numeric" value={form[`pointer${row}`]} onChange={(event: ChangeEvent<HTMLInputElement>) => update(`pointer${row}`, event.target.value)} />
+                <input inputMode="numeric" value={form[`usage${row}`]} onChange={(event: ChangeEvent<HTMLInputElement>) => update(`usage${row}`, event.target.value)} />
               </div>
             ))}
           </div>
@@ -244,7 +260,7 @@ export default function AdjustmentForm() {
               <Field label="原保育費" name="oldConservationFee" value={form.oldConservationFee} onChange={update} inputMode="numeric" required />
               <Field label="修正後保育費" name="newConservationFee" value={form.newConservationFee} onChange={update} inputMode="numeric" required />
             </div>
-            <div className="summary"><span>用水差額：<b>{diff(form.oldUsage, form.newUsage)}</b> 度</span><span>原總額：<b>{totals.oldTotal}</b> 元</span><span>修正後：<b>{totals.newTotal}</b> 元</span><span>應退／減收：<b>{totals.difference}</b> 元</span></div>
+            <div className="summary"><span>用水差額：<b>{diff(form.oldUsage, form.newUsage)}</b> 度</span><span>原總額：<b>{totals.oldTotal}</b> 元</span><span>修正後：<b>{totals.newTotal}</b> 元</span><span>{settlementLabel}：<b>{settlementAmount}</b> 元</span></div>
           </section>
         ) : (
           <section className="panel">
@@ -260,8 +276,8 @@ export default function AdjustmentForm() {
 
         <section className="panel">
           <h2>5. 查報文字</h2>
-          <label className="field full"><span>複查經過</span><textarea value={form.process} onChange={(event) => update("process", event.target.value)} placeholder="可留白，系統會先產生基本文字。" /></label>
-          <label className="field full"><span>處理結果及擬辦</span><textarea value={form.result} onChange={(event) => update("result", event.target.value)} placeholder="可留白，系統會依數字產生基本文字。" /></label>
+          <label className="field full"><span>複查經過</span><textarea value={form.process} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => update("process", event.target.value)} placeholder="可留白，系統會先產生基本文字。" /></label>
+          <label className="field full"><span>處理結果及擬辦</span><textarea value={form.result} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => update("result", event.target.value)} placeholder="可留白，系統會依數字產生基本文字。" /></label>
           <Field label="處理方式" name="paymentMethod" value={form.paymentMethod} onChange={update} />
         </section>
 
