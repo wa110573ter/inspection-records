@@ -62,7 +62,11 @@ async function transformDeflate(
     kind === "compress"
       ? new CompressionStream("deflate-raw")
       : new DecompressionStream("deflate-raw");
-  const transformed = new Blob([bytes]).stream().pipeThrough(stream);
+  const source = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+  const transformed = new Blob([source]).stream().pipeThrough(stream);
   return new Uint8Array(await new Response(transformed).arrayBuffer());
 }
 
