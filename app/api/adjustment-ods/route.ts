@@ -30,6 +30,10 @@ function safeFilePart(value: string) {
   return value.replace(/[\\/:*?"<>|\s]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
+function missing(payload: Payload, keys: string[]) {
+  return keys.filter((key) => !text(payload, key));
+}
+
 function error(message: string, status = 400) {
   return Response.json({ error: message }, { status });
 }
@@ -85,6 +89,13 @@ export async function POST(request: Request) {
   let values: Record<string, string | number>;
 
   if (caseType === "misread") {
+    const required = missing(payload, [
+      "currentPeriod", "oldUsage", "newUsage", "oldWaterFee", "newWaterFee",
+      "oldTax", "newTax", "oldCleaningFee", "newCleaningFee",
+      "oldConservationFee", "newConservationFee",
+    ]);
+    if (required.length) return error("誤抄改單的試算欄位尚未填完整。");
+
     const oldUsage = amount(payload, "oldUsage");
     const newUsage = amount(payload, "newUsage");
     const oldWaterFee = amount(payload, "oldWaterFee");
@@ -100,10 +111,16 @@ export async function POST(request: Request) {
     const currentPeriod = text(payload, "currentPeriod").replace(/期$/, "");
     const correctedPointer = text(payload, "correctedPointer");
     const paymentMethod = text(payload, "paymentMethod") || "改單後通知用戶繳費";
+    const difference = oldTotal - newTotal;
+    const settlement = difference > 0
+      ? `應退或減收${difference}元`
+      : difference < 0
+        ? `應補收${Math.abs(difference)}元`
+        : "無退補差額";
     const process = text(payload, "process") ||
       `1複查經過：經稽查核對${currentPeriod}期抄表指數及現場水表，確認原計費用水量應予修正。`;
     const result = text(payload, "result") ||
-      `2處理結果及擬辦：${currentPeriod}期用水量由${oldUsage}度更正為${newUsage}度，原應收${oldTotal}元，修正後應收${newTotal}元，差額${oldTotal - newTotal}元，${paymentMethod}。`;
+      `2處理結果及擬辦：${currentPeriod}期用水量由${oldUsage}度更正為${newUsage}度，原應收${oldTotal}元，修正後應收${newTotal}元，${settlement}，${paymentMethod}。`;
 
     values = {
       ...commonValues(payload),
@@ -132,16 +149,24 @@ export async function POST(request: Request) {
       DIFF_CONSERVATION_FEE: oldConservationFee - newConservationFee,
       OLD_TOTAL: oldTotal,
       NEW_TOTAL: newTotal,
-      DIFF_TOTAL: oldTotal - newTotal,
+      DIFF_TOTAL: difference,
     };
     template = MISREAD_TEMPLATE_BASE64;
     typeLabel = "抄表員誤抄";
   } else if (caseType === "leak") {
+    const required = missing(payload, [
+      "period1", "period2", "period3", "abnormalCleaningFee",
+      "normalCleaningFee1", "normalCleaningFee2",
+    ]);
+    if (required.length) return error("清潔處理費減免欄位尚未填完整。");
+
     const abnormal = amount(payload, "abnormalCleaningFee");
     const normal1 = amount(payload, "normalCleaningFee1");
     const normal2 = amount(payload, "normalCleaningFee2");
     const average = Math.round((normal1 + normal2) / 2);
     const reduction = abnormal - average;
+    if (reduction < 0) return error("異常期清潔處理費不得低於正常期平均金額。");
+
     const period1 = text(payload, "period1");
     const period2 = text(payload, "period2");
     const period3 = text(payload, "period3");
