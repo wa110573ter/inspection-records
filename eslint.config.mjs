@@ -12,8 +12,8 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    // The import utility intentionally performs a full page return to the protected app.
-    files: ["app/import/import-app.tsx"],
+    // These utilities intentionally perform a full page return to the protected app.
+    files: ["app/import/import-app.tsx", "app/journal/journal-client.tsx"],
     rules: {
       "@next/next/no-html-link-for-pages": "off",
     },
