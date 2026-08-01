@@ -21,11 +21,22 @@ function enablePhotoLibrary(root: ParentNode) {
   });
 }
 
+function findStatusNode(input: HTMLInputElement) {
+  const container = input.closest("label") || input.parentElement;
+  return container?.querySelector<HTMLSpanElement>("[data-image-optimization-status]") || null;
+}
+
+function clearOptimizationState(input: HTMLInputElement) {
+  input.removeAttribute("aria-busy");
+  const status = findStatusNode(input);
+  if (status) status.remove();
+}
+
 function getStatusNode(input: HTMLInputElement) {
   const container = input.closest("label") || input.parentElement;
   if (!container) return null;
 
-  let status = container.querySelector<HTMLSpanElement>("[data-image-optimization-status]");
+  let status = findStatusNode(input);
   if (!status) {
     status = document.createElement("span");
     status.dataset.imageOptimizationStatus = "true";
@@ -45,7 +56,10 @@ async function optimizeInputFiles(
   isCurrent: () => boolean,
 ) {
   const files = Array.from(input.files || []);
-  if (!files.length || !files.some(isOptimizableImage)) return;
+  if (!files.length || !files.some(isOptimizableImage)) {
+    if (isCurrent()) clearOptimizationState(input);
+    return;
+  }
 
   const status = getStatusNode(input);
   if (status && isCurrent()) {
@@ -68,10 +82,10 @@ async function optimizeInputFiles(
 
     if (!status) return;
     if (result.changedCount > 0 && result.failedCount > 0) {
-      status.textContent = `已自動最佳化 ${result.changedCount} 張：${formatFileSize(result.originalImageSize)} → ${formatFileSize(result.optimizedImageSize)}；另有 ${result.failedCount} 張保留原檔。`;
+      status.textContent = `已自動處理 ${result.changedCount} 張：${formatFileSize(result.originalImageSize)} → ${formatFileSize(result.optimizedImageSize)}；另有 ${result.failedCount} 張保留原檔。`;
       status.style.color = "#9a5a12";
     } else if (result.changedCount > 0) {
-      status.textContent = `已自動最佳化 ${result.changedCount} 張：${formatFileSize(result.originalImageSize)} → ${formatFileSize(result.optimizedImageSize)}`;
+      status.textContent = `已自動處理 ${result.changedCount} 張：${formatFileSize(result.originalImageSize)} → ${formatFileSize(result.optimizedImageSize)}`;
       status.style.color = "#237244";
     } else if (result.failedCount > 0) {
       status.textContent = `有 ${result.failedCount} 張照片無法縮小，將改用原始檔案上傳。`;
