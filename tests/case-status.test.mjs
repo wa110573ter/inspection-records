@@ -65,6 +65,17 @@ test("a clear close result without future work recommends closing", () => {
   );
 });
 
+test("completed inspection and refund options can close when no work remains", () => {
+  assert.deepEqual(
+    recommendCaseUpdate({ result: "已完成複查", nextStep: "", followUpDate: "" }),
+    { status: "已結案", customStatus: "" },
+  );
+  assert.deepEqual(
+    recommendCaseUpdate({ result: "已完成退費或下期扣抵", nextStep: "", followUpDate: "" }),
+    { status: "已結案", customStatus: "" },
+  );
+});
+
 test("a follow-up date prevents an automatic close recommendation", () => {
   assert.deepEqual(
     recommendCaseUpdate({
@@ -91,6 +102,13 @@ test("contact failures recommend processing with contact-failure progress", () =
   assert.deepEqual(
     recommendCaseUpdate({ contactResult: "未接", result: "", nextStep: "再次電話聯繫" }),
     { status: "處理中", customStatus: "聯絡未果" },
+  );
+});
+
+test("transfer next steps map to the related-unit progress", () => {
+  assert.deepEqual(
+    recommendCaseUpdate({ result: "", nextStep: "轉請相關單位處理" }),
+    { status: "處理中", customStatus: "已轉相關單位" },
   );
 });
 
