@@ -3,6 +3,12 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { FormEvent, Fragment, useEffect, useMemo, useState } from "react";
+import {
+  CASE_PROGRESS_OPTIONS,
+  CASE_STATUSES,
+  coerceCaseStatus,
+  recommendCaseUpdate,
+} from "./case-status.js";
 
 type Attachment = {
   id: string;
@@ -42,31 +48,15 @@ type InspectionCase = {
   records: FollowUp[];
 };
 
-const statuses = ["待處理", "處理中", "已結案"];
-
-const progressOptions = [
-  "尚未聯絡",
-  "已聯絡，待用戶回覆",
-  "聯絡未果",
-  "待現場勘查",
-  "現場勘查完成，待後續",
-  "等待用戶自行檢查",
-  "等待用戶修繕",
-  "等待用戶提供資料",
-  "待複查",
-  "待內部簽辦",
-  "待辦理改單／退費／扣抵",
-  "等待後續用水量",
-  "已轉相關單位",
-  "持續處理中",
-];
+const statuses = CASE_STATUSES;
+const progressOptions = CASE_PROGRESS_OPTIONS;
 
 function normalizeCase(item: InspectionCase): InspectionCase {
-  if (statuses.includes(item.status)) return item;
+  const normalized = coerceCaseStatus(item.status, item.customStatus);
   return {
     ...item,
-    status: "處理中",
-    customStatus: item.customStatus || item.status,
+    status: normalized.status,
+    customStatus: normalized.customStatus,
   };
 }
 
@@ -364,45 +354,6 @@ function inferReason(value: string) {
   return { group: value.trim() ? "其他" : "", detail: "" };
 }
 
-function recommendedStatus(result: string, nextStep: string, contactResult: string) {
-  const combined = `${result} ${nextStep} ${contactResult}`.trim();
-  if (!combined) return null;
-  if (
-    combined.includes("已結案") ||
-    combined.includes("無，案件可結案") ||
-    (result.trim().startsWith("已完成") && !nextStep.trim())
-  ) {
-    return "已結案";
-  }
-  return "處理中";
-}
-
-function recommendedProgress(result: string, nextStep: string, contactResult: string) {
-  const combined = `${result} ${nextStep} ${contactResult}`.trim();
-  if (!combined || recommendedStatus(result, nextStep, contactResult) === "已結案") return "";
-  if (
-    combined.includes("聯絡未果") ||
-    combined.includes("未接") ||
-    combined.includes("空號") ||
-    combined.includes("關機") ||
-    combined.includes("已讀未回")
-  ) {
-    return "聯絡未果";
-  }
-  if (combined.includes("複查")) return "待複查";
-  if (combined.includes("現勘")) return "待現場勘查";
-  if (combined.includes("後續用水量") || combined.includes("下一期用水量")) return "等待後續用水量";
-  if (combined.includes("改單") || combined.includes("退費") || combined.includes("扣抵") || combined.includes("簽報")) {
-    return "待辦理改單／退費／扣抵";
-  }
-  if (combined.includes("修繕")) return "等待用戶修繕";
-  if (combined.includes("照片") || combined.includes("資料") || combined.includes("收據")) {
-    return "等待用戶提供資料";
-  }
-  if (combined.includes("回覆")) return "已聯絡，待用戶回覆";
-  return "持續處理中";
-}
-
 function stripTrailingPunctuation(value: string) {
   return value.trim().replace(/[。；;，,\s]+$/g, "");
 }
@@ -473,6 +424,10 @@ function CaseFields({ item, cases }: { item?: InspectionCase; cases: InspectionC
   const [reasonGroup, setReasonGroup] = useState(inferred.group);
   const [reasonDetail, setReasonDetail] = useState(inferred.detail);
   const [reasonText, setReasonText] = useState(item?.reason || "");
+  const [caseStatus, setCaseStatus] = useState(item?.status || "待處理");
+  const [caseProgress, setCaseProgress] = useState(
+    item?.status === "處理中" ? item.customStatus : "",
+  );
 
   const duplicateCases = useMemo(() => {
     const normalized = normalizeWaterNumber(waterNumber);
@@ -612,7 +567,15 @@ function CaseFields({ item, cases }: { item?: InspectionCase; cases: InspectionC
           </label>
           <label>
             案件狀態
-            <select name="status" defaultValue={item?.status || "待處理"}>
+            <select
+              name="status"
+              value={caseStatus}
+              onChange={(event) => {
+                const nextStatus = event.target.value;
+                setCaseStatus(nextStatus);
+                if (nextStatus !== "處理中") setCaseProgress("");
+              }}
+            >
               {statuses.map((status) => (
                 <option key={status}>{status}</option>
               ))}
@@ -621,7 +584,12 @@ function CaseFields({ item, cases }: { item?: InspectionCase; cases: InspectionC
           </label>
           <label>
             目前進度（處理中）
-            <select name="customStatus" defaultValue={item?.customStatus || ""}>
+            <select
+              name="customStatus"
+              value={caseProgress}
+              onChange={(event) => setCaseProgress(event.target.value)}
+              disabled={caseStatus !== "處理中"}
+            >
               <option value="">未設定</option>
               {progressOptions.map((progress) => (
                 <option key={progress} value={progress}>{progress}</option>
@@ -630,7 +598,9 @@ function CaseFields({ item, cases }: { item?: InspectionCase; cases: InspectionC
                 <option value={item.customStatus}>{item.customStatus}</option>
               )}
             </select>
-            <small className="field-hint">選擇細部進度，不必另外打字。</small>
+            <small className="field-hint">
+              {caseStatus === "處理中" ? "選擇細部進度，不必另外打字。" : "只有處理中案件需要設定進度。"}
+            </small>
           </label>
         </div>
       </div>
@@ -670,11 +640,13 @@ function CaseFields({ item, cases }: { item?: InspectionCase; cases: InspectionC
 function RecordFields({
   record,
   currentStatus,
+  currentProgress,
   busy = false,
   onApplySuggestedStatus,
 }: {
   record?: FollowUp;
   currentStatus?: string;
+  currentProgress?: string;
   busy?: boolean;
   onApplySuggestedStatus?: (status: string, progress?: string) => void | Promise<void>;
 }) {
@@ -690,12 +662,8 @@ function RecordFields({
   const [customerResponse, setCustomerResponse] = useState("");
 
   const statusSuggestion = useMemo(
-    () => recommendedStatus(result, nextStep, contactResult),
-    [contactResult, nextStep, result],
-  );
-  const progressSuggestion = useMemo(
-    () => recommendedProgress(result, nextStep, contactResult),
-    [contactResult, nextStep, result],
+    () => recommendCaseUpdate({ result, nextStep, contactResult, followUpDate }),
+    [contactResult, followUpDate, nextStep, result],
   );
 
   function applyQuickValue(
@@ -789,16 +757,22 @@ function RecordFields({
         <button type="button" className="generate-record" onClick={generateProcess}>
           產生／更新正式處理紀錄
         </button>
-        {statusSuggestion && onApplySuggestedStatus && (statusSuggestion !== currentStatus || progressSuggestion) && (
+        {statusSuggestion && onApplySuggestedStatus && (
+          statusSuggestion.status !== currentStatus ||
+          statusSuggestion.customStatus !== (currentProgress || "")
+        ) && (
           <div className="status-suggestion">
             <span>
-              建議案件狀態改為「{statusSuggestion}」
-              {progressSuggestion ? `，目前進度設為「${progressSuggestion}」` : ""}
+              建議案件狀態改為「{statusSuggestion.status}」
+              {statusSuggestion.customStatus ? `，目前進度設為「${statusSuggestion.customStatus}」` : ""}
             </span>
             <button
               type="button"
               disabled={busy}
-              onClick={() => void onApplySuggestedStatus(statusSuggestion, progressSuggestion)}
+              onClick={() => void onApplySuggestedStatus(
+                statusSuggestion.status,
+                statusSuggestion.customStatus,
+              )}
             >
               一鍵套用
             </button>
@@ -1444,7 +1418,7 @@ export default function InspectionApp({ userName }: { userName: string }) {
                 <select
                   value={selected.customStatus}
                   onChange={(event) => void updateProgress(event.target.value)}
-                  disabled={busy}
+                  disabled={busy || selected.status !== "處理中"}
                 >
                   <option value="">未設定</option>
                   {progressOptions.map((progress) => (
@@ -1590,7 +1564,7 @@ export default function InspectionApp({ userName }: { userName: string }) {
                                 </button>
                               </div>
                             </div>
-                            <RecordFields record={record} currentStatus={selected.status} busy={busy} onApplySuggestedStatus={updateStatus} />
+                            <RecordFields record={record} currentStatus={selected.status} currentProgress={selected.customStatus} busy={busy} onApplySuggestedStatus={updateStatus} />
                             {record.attachments.length > 0 && (
                               <div className="mini-upload">
                                 <h4>原有附件</h4>
@@ -1683,7 +1657,7 @@ export default function InspectionApp({ userName }: { userName: string }) {
                     <p>每次聯絡、現勘或回覆都記在同一案件。</p>
                   </div>
                 </div>
-                <RecordFields currentStatus={selected.status} busy={busy} onApplySuggestedStatus={updateStatus} />
+                <RecordFields currentStatus={selected.status} currentProgress={selected.customStatus} busy={busy} onApplySuggestedStatus={updateStatus} />
                 <button className="primary submit" disabled={busy}>
                   {busy ? "正在儲存…" : "儲存本次紀錄"}
                 </button>

@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useMemo, useState } from "react";
+import { coerceCaseStatus } from "../case-status.js";
 
 type Attachment = {
   id: string;
@@ -183,18 +184,11 @@ function normalizeSearch(value: string) {
 }
 
 function statusLabel(item: InspectionCase) {
-  if (item.status === "待處理" || item.status === "處理中" || item.status === "已結案") {
-    return item.status;
-  }
-  return "處理中";
+  return coerceCaseStatus(item.status, item.customStatus).status;
 }
 
 function progressLabel(item: InspectionCase) {
-  if (item.customStatus) return item.customStatus;
-  if (item.status !== "待處理" && item.status !== "處理中" && item.status !== "已結案") {
-    return item.status;
-  }
-  return "";
+  return coerceCaseStatus(item.status, item.customStatus).customStatus;
 }
 
 function dateRange(preset: DatePreset, customStart: string, customEnd: string) {
