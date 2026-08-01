@@ -183,7 +183,18 @@ function normalizeSearch(value: string) {
 }
 
 function statusLabel(item: InspectionCase) {
-  return item.status === "其他" && item.customStatus ? item.customStatus : item.status;
+  if (item.status === "待處理" || item.status === "處理中" || item.status === "已結案") {
+    return item.status;
+  }
+  return "處理中";
+}
+
+function progressLabel(item: InspectionCase) {
+  if (item.customStatus) return item.customStatus;
+  if (item.status !== "待處理" && item.status !== "處理中" && item.status !== "已結案") {
+    return item.status;
+  }
+  return "";
 }
 
 function dateRange(preset: DatePreset, customStart: string, customEnd: string) {
@@ -277,6 +288,7 @@ export default function JournalClient({ userName }: { userName: string }) {
           item.meterNumber,
           item.reason,
           statusLabel(item),
+          progressLabel(item),
           record.method,
           record.pointer,
           record.process,
@@ -413,6 +425,7 @@ export default function JournalClient({ userName }: { userName: string }) {
                   </div>
 
                   <div className="case-details">
+                    {progressLabel(item) && <span>目前進度 {progressLabel(item)}</span>}
                     {item.phone && <span>電話 {item.phone}</span>}
                     {item.meterNumber && <span>表號 {item.meterNumber}</span>}
                     {record.attachments.length > 0 && <span>附件 {record.attachments.length} 個</span>}
