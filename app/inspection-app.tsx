@@ -368,9 +368,9 @@ function recommendedStatus(result: string, nextStep: string, contactResult: stri
   const combined = `${result} ${nextStep} ${contactResult}`.trim();
   if (!combined) return null;
   if (
-    combined.includes("已完成處理") ||
     combined.includes("已結案") ||
-    combined.includes("無，案件可結案")
+    combined.includes("無，案件可結案") ||
+    (result.trim().startsWith("已完成") && !nextStep.trim())
   ) {
     return "已結案";
   }
@@ -1284,7 +1284,7 @@ export default function InspectionApp({ userName }: { userName: string }) {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜尋水號、姓名、地址、表號"
+                placeholder="搜尋水號、姓名、地址、進度或處理內容"
               />
             </label>
             <div className="filter-row">
