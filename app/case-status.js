@@ -30,7 +30,9 @@ const CLOSE_READY_RESULTS = new Set([
   "已向用戶說明並取得諒解",
   "確認抄表無誤",
   "未發現漏水",
+  "已完成複查",
   "已完成改單／退費／扣抵",
+  "已完成退費或下期扣抵",
   "已轉相關單位處理",
   "已結案",
 ]);
@@ -114,7 +116,7 @@ function inferProgress(combined) {
     return "等待用戶提供資料";
   }
   if (combined.includes("回覆")) return "已聯絡，待用戶回覆";
-  if (combined.includes("轉相關單位")) return "已轉相關單位";
+  if (combined.includes("相關單位")) return "已轉相關單位";
   return "持續處理中";
 }
 
