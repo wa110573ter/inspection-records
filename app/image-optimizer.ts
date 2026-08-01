@@ -2,8 +2,27 @@ export const TARGET_IMAGE_SIZE = 4 * 1024 * 1024;
 export const MAX_IMAGE_EDGE = 2560;
 export const MIN_IMAGE_EDGE = 1600;
 
+const imageTypesByExtension: Record<string, string> = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".bmp": "image/bmp",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
+  ".avif": "image/avif",
+  ".heic": "image/heic",
+  ".heif": "image/heif",
+};
+
 export function formatFileSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(bytes >= 10 * 1024 * 1024 ? 1 : 2)} MB`;
+}
+
+export function inferredImageType(file: File) {
+  const match = file.name.toLowerCase().match(/\.[^.]+$/);
+  return match ? imageTypesByExtension[match[0]] || "" : "";
 }
 
 export function isHeifImage(file: File) {
@@ -11,11 +30,28 @@ export function isHeifImage(file: File) {
 }
 
 export function isOptimizableImage(file: File) {
-  return file.type.startsWith("image/") || isHeifImage(file);
+  return file.type.startsWith("image/") || Boolean(inferredImageType(file));
+}
+
+function needsTypeNormalization(file: File) {
+  return !file.type.startsWith("image/") && Boolean(inferredImageType(file));
 }
 
 export function needsOptimization(file: File) {
-  return isOptimizableImage(file) && (file.size > TARGET_IMAGE_SIZE || isHeifImage(file));
+  return (
+    isOptimizableImage(file) &&
+    (file.size > TARGET_IMAGE_SIZE || isHeifImage(file) || needsTypeNormalization(file))
+  );
+}
+
+function normalizeImageType(file: File) {
+  const inferredType = inferredImageType(file);
+  if (file.type.startsWith("image/") || !inferredType) return file;
+
+  return new File([file], file.name, {
+    type: inferredType,
+    lastModified: file.lastModified,
+  });
 }
 
 type DecodedImage = {
@@ -98,13 +134,15 @@ async function renderJpeg(
 }
 
 export async function optimizeImage(file: File) {
-  const heif = isHeifImage(file);
   if (!isOptimizableImage(file)) return file;
-  if (!needsOptimization(file)) return file;
 
-  const image = await decodeImage(file);
+  const normalizedFile = normalizeImageType(file);
+  const heif = isHeifImage(normalizedFile);
+  if (normalizedFile.size <= TARGET_IMAGE_SIZE && !heif) return normalizedFile;
+
+  const image = await decodeImage(normalizedFile);
   try {
-    if (!image.width || !image.height) return file;
+    if (!image.width || !image.height) return normalizedFile;
 
     const originalLongestEdge = Math.max(image.width, image.height);
     const attempts = [
@@ -124,13 +162,13 @@ export async function optimizeImage(file: File) {
       }
     }
 
-    if (!smallest) return file;
-    if (!heif && smallest.size >= file.size) return file;
+    if (!smallest) return normalizedFile;
+    if (!heif && smallest.size >= normalizedFile.size) return normalizedFile;
 
-    const jpegName = file.name.replace(/\.[^.]+$/, "") || "photo";
+    const jpegName = normalizedFile.name.replace(/\.[^.]+$/, "") || "photo";
     return new File([smallest], `${jpegName}.jpg`, {
       type: "image/jpeg",
-      lastModified: file.lastModified,
+      lastModified: normalizedFile.lastModified,
     });
   } finally {
     image.cleanup();
