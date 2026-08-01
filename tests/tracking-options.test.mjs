@@ -2,18 +2,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("tracking dropdown excludes the removed legacy status option", async () => {
+test("home page only exposes the four case-status filter buttons", async () => {
   const source = await readFile(
     new URL("../app/inspection-app.tsx", import.meta.url),
     "utf8",
   );
-  const options = source.match(
-    /const trackingOptions = \[([\s\S]*?)\] as const;/,
-  )?.[1];
-
-  assert.ok(options, "trackingOptions should remain defined");
-  assert.doesNotMatch(options, /未結案|聯絡未果|待現勘|待複查|其他/);
-  assert.match(options, /全部追蹤狀態/);
-  assert.match(options, /今日要追蹤/);
-  assert.match(options, /已結案/);
+  assert.match(source, /\["全部", \.\.\.statuses\]\.map/);
+  assert.doesNotMatch(source, /id="tracking-filter"|追蹤篩選/);
+  assert.doesNotMatch(source, /全部追蹤狀態|今日要追蹤|3日內要追蹤/);
 });
