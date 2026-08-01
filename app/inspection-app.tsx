@@ -973,6 +973,7 @@ export default function InspectionApp({ userName }: { userName: string }) {
     files: File[],
     category: string,
   ) {
+    const failedFiles: string[] = [];
     for (const file of files) {
       if (!file || file.size === 0) continue;
       const body = new FormData();
@@ -980,13 +981,36 @@ export default function InspectionApp({ userName }: { userName: string }) {
       if (recordId) body.set("recordId", recordId);
       body.set("category", category);
       body.set("file", file);
-      await api("/api/uploads", { method: "POST", body });
+      try {
+        await api("/api/uploads", { method: "POST", body });
+      } catch {
+        failedFiles.push(file.name || "未命名附件");
+      }
     }
+    return failedFiles;
   }
 
   async function uploadCaseFormFiles(caseId: string, data: FormData) {
-    await uploadFiles(caseId, null, data.getAll("system31") as File[], "system31");
-    await uploadFiles(caseId, null, data.getAll("gis") as File[], "gis");
+    const systemFailures = await uploadFiles(
+      caseId,
+      null,
+      data.getAll("system31") as File[],
+      "system31",
+    );
+    const gisFailures = await uploadFiles(
+      caseId,
+      null,
+      data.getAll("gis") as File[],
+      "gis",
+    );
+    return [...systemFailures, ...gisFailures];
+  }
+
+  function uploadWarning(savedLabel: string, failedFiles: string[]) {
+    if (!failedFiles.length) return "";
+    const names = failedFiles.slice(0, 5).join("、");
+    const remainder = failedFiles.length > 5 ? `等 ${failedFiles.length} 個檔案` : "";
+    return `${savedLabel}已儲存，但附件「${names}${remainder}」上傳失敗；可在案件內重新補傳，不需重複建立。`;
   }
 
   async function createCase(event: FormEvent<HTMLFormElement>) {
@@ -1001,9 +1025,11 @@ export default function InspectionApp({ userName }: { userName: string }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(casePayload(data)),
       });
-      await uploadCaseFormFiles(result.case.id, data);
+      const failedFiles = await uploadCaseFormFiles(result.case.id, data);
       await loadCases(result.case.id);
       setView("detail");
+      const warning = uploadWarning("案件", failedFiles);
+      if (warning) setError(warning);
     } catch (err) {
       setError(err instanceof Error ? err.message : "案件建立失敗");
     } finally {
@@ -1023,9 +1049,11 @@ export default function InspectionApp({ userName }: { userName: string }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(casePayload(data)),
       });
-      await uploadCaseFormFiles(selected.id, data);
+      const failedFiles = await uploadCaseFormFiles(selected.id, data);
       await loadCases(selected.id);
       setEditingCase(false);
+      const warning = uploadWarning("案件修改", failedFiles);
+      if (warning) setError(warning);
     } catch (err) {
       setError(err instanceof Error ? err.message : "案件修改失敗");
     } finally {
@@ -1085,10 +1113,17 @@ export default function InspectionApp({ userName }: { userName: string }) {
           body: JSON.stringify(recordPayload(data)),
         },
       );
-      await uploadFiles(selected.id, result.record.id, data.getAll("media") as File[], "record");
+      const failedFiles = await uploadFiles(
+        selected.id,
+        result.record.id,
+        data.getAll("media") as File[],
+        "record",
+      );
       form.reset();
       setRecordFormVersion((version) => version + 1);
       await loadCases(selected.id);
+      const warning = uploadWarning("處理紀錄", failedFiles);
+      if (warning) setError(warning);
     } catch (err) {
       setError(err instanceof Error ? err.message : "紀錄新增失敗");
     } finally {
@@ -1108,9 +1143,16 @@ export default function InspectionApp({ userName }: { userName: string }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(recordPayload(data)),
       });
-      await uploadFiles(selected.id, record.id, data.getAll("media") as File[], "record");
+      const failedFiles = await uploadFiles(
+        selected.id,
+        record.id,
+        data.getAll("media") as File[],
+        "record",
+      );
       await loadCases(selected.id);
       setEditingRecordId(null);
+      const warning = uploadWarning("處理紀錄修改", failedFiles);
+      if (warning) setError(warning);
     } catch (err) {
       setError(err instanceof Error ? err.message : "紀錄修改失敗");
     } finally {
@@ -1448,8 +1490,9 @@ export default function InspectionApp({ userName }: { userName: string }) {
               {isOverdue(activeFollowUpDate(selected), selected.status) && <small>已逾期，請優先處理</small>}
             </div>
             <div className="date-overview-item">
-              <span>結案日期</span>
-              <strong>{selected.status === "已結案" && selected.records[0] ? formatDate(selected.records[0].date) : "未結案"}</strong>
+              <span>結案狀態</span>
+              <strong>{selected.status === "已結案" ? "已結案" : "未結案"}</strong>
+              <small>{selected.status === "已結案" ? "避免用舊處理日期誤當結案日期" : caseProgressLabel(selected) || "尚未設定目前進度"}</small>
             </div>
           </div>
 
@@ -1564,7 +1607,7 @@ export default function InspectionApp({ userName }: { userName: string }) {
                                 </button>
                               </div>
                             </div>
-                            <RecordFields record={record} currentStatus={selected.status} currentProgress={selected.customStatus} busy={busy} onApplySuggestedStatus={updateStatus} />
+                            <RecordFields record={record} currentStatus={selected.status} currentProgress={selected.customStatus} busy={busy} />
                             {record.attachments.length > 0 && (
                               <div className="mini-upload">
                                 <h4>原有附件</h4>

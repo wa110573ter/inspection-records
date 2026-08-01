@@ -85,9 +85,14 @@ export async function POST(request: Request) {
       const rowNumber = index + 2;
       const waterNumber = clean(row.waterNumber).replace(/[\s-]/g, "").toUpperCase();
       const rowStatusText = clean(row.status);
+      const rowProgressText = clean(row.customStatus);
+      const defaultProgress =
+        !rowStatusText || rowStatusText === defaultStatusText
+          ? defaultStatus.customStatus
+          : "";
       const normalizedStatus = normalizeCaseStatus(
         rowStatusText || defaultStatusText,
-        clean(row.customStatus) || (rowStatusText ? "" : defaultStatus.customStatus),
+        rowProgressText || defaultProgress,
       );
       const dateRaw = clean(row.receivedDate);
       const receivedDate = dateRaw ? normalizeDate(dateRaw) : defaultReceivedDate || "";
