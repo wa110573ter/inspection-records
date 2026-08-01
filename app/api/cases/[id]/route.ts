@@ -1,18 +1,8 @@
 import { and, eq } from "drizzle-orm";
+import { normalizeCaseStatus } from "../../../case-status.js";
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { getBucket, getDb } from "../../../../db";
 import { attachments, caseRecords, cases } from "../../../../db/schema";
-
-const allowedStatuses = new Set([
-  "待處理",
-  "聯絡未果",
-  "待現勘",
-  "處理中",
-  "待用戶回覆",
-  "待複查",
-  "已結案",
-  "其他",
-]);
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -45,13 +35,25 @@ export async function PATCH(
   if ("meterNumber" in payload) update.meterNumber = clean(payload.meterNumber);
   if ("reason" in payload) update.reason = clean(payload.reason);
   if ("receivedDate" in payload) update.receivedDate = clean(payload.receivedDate);
-  if ("customStatus" in payload) update.customStatus = clean(payload.customStatus);
-  if ("status" in payload) {
-    const status = clean(payload.status);
-    if (!allowedStatuses.has(status)) {
+
+  const hasStatus = "status" in payload;
+  const hasProgress = "customStatus" in payload;
+  if (hasStatus) {
+    const normalized = normalizeCaseStatus(
+      clean(payload.status),
+      hasProgress ? payload.customStatus : "",
+    );
+    if (!normalized) {
       return Response.json({ error: "案件狀態無效" }, { status: 400 });
     }
-    update.status = status;
+    update.status = normalized.status;
+    if (hasProgress || normalized.migrated || normalized.status !== "處理中") {
+      update.customStatus = normalized.customStatus;
+    }
+  } else if (hasProgress) {
+    const progress = clean(payload.customStatus);
+    update.customStatus = progress;
+    if (progress) update.status = "處理中";
   }
 
   const db = getDb();

@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, useMemo, useState } from "react";
+import { CASE_PROGRESS_OPTIONS, CASE_STATUSES } from "../case-status.js";
 
 type ImportRow = {
   waterNumber: string;
@@ -19,7 +20,8 @@ type ImportRow = {
 type HeaderKey = Exclude<keyof ImportRow, "rawText">;
 type ImportMode = "31" | "csv";
 
-const statuses = ["待處理", "聯絡未果", "待現勘", "處理中", "待用戶回覆", "待複查", "已結案", "其他"];
+const statuses = CASE_STATUSES;
+const progressOptions = CASE_PROGRESS_OPTIONS;
 const headers: Array<{ key: HeaderKey; label: string }> = [
   { key: "waterNumber", label: "水號" },
   { key: "customerName", label: "姓名" },
@@ -30,7 +32,7 @@ const headers: Array<{ key: HeaderKey; label: string }> = [
   { key: "reason", label: "案件原因" },
   { key: "receivedDate", label: "收件日期" },
   { key: "status", label: "案件狀態" },
-  { key: "customStatus", label: "其他狀態說明" },
+  { key: "customStatus", label: "目前進度" },
 ];
 
 const aliases: Record<string, HeaderKey> = {
@@ -43,7 +45,7 @@ const aliases: Record<string, HeaderKey> = {
   案件原因: "reason", 原因: "reason", reason: "reason",
   收件日期: "receivedDate", 日期: "receivedDate", receiveddate: "receivedDate",
   案件狀態: "status", 案件状态: "status", 狀態: "status", 状态: "status", status: "status",
-  其他狀態說明: "customStatus", 其他状态说明: "customStatus", customstatus: "customStatus",
+  目前進度: "customStatus", 当前进度: "customStatus", 其他狀態說明: "customStatus", 其他状态说明: "customStatus", customstatus: "customStatus",
 };
 
 const styles = `
@@ -162,6 +164,7 @@ export default function ImportApp({ userName }: { userName: string }) {
   const [mode, setMode] = useState<ImportMode>("31");
   const [text, setText] = useState("");
   const [defaultStatus, setDefaultStatus] = useState("處理中");
+  const [defaultProgress, setDefaultProgress] = useState("持續處理中");
   const [defaultReason, setDefaultReason] = useState("");
   const [defaultReceivedDate, setDefaultReceivedDate] = useState("");
   const [busy, setBusy] = useState(false);
@@ -182,7 +185,7 @@ export default function ImportApp({ userName }: { userName: string }) {
     if (!window.confirm(`確定要${wording}嗎？`)) return;
     setBusy(true);
     try {
-      const response = await fetch("/api/cases/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rows: parsed.rows, defaultStatus, defaultReason, defaultReceivedDate }) });
+      const response = await fetch("/api/cases/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rows: parsed.rows, defaultStatus, defaultCustomStatus: defaultProgress, defaultReason, defaultReceivedDate }) });
       const result = (await readJson(response)) as { imported?: number; error?: string; errors?: string[] };
       if (!response.ok) { setMessage(result.error || "匯入失敗"); setErrors(result.errors || []); return; }
       setSuccess(true);
@@ -213,8 +216,9 @@ export default function ImportApp({ userName }: { userName: string }) {
         <h2>{mode === "31" ? "貼上 31 畫面全文" : "選擇檔案或貼上資料"}</h2>
         <div className="import-grid">
           {mode === "csv" && <label className="import-field wide file-box">選擇 CSV 檔案<input type="file" accept=".csv,text/csv,text/plain" onChange={chooseFile} /></label>}
-          <label className="import-field wide">{mode === "31" ? "31 畫面完整原文" : "CSV／試算表資料"}<textarea value={text} onChange={(event) => { setText(event.target.value); resetFeedback(); }} placeholder={mode === "31" ? "請在 31 畫面按 Ctrl+A、Ctrl+C，再貼到此處……" : "水號,姓名,電話,地址,座標,表號,案件原因,收件日期,案件狀態,其他狀態說明"} /></label>
-          <label className="import-field">案件狀態<select value={defaultStatus} onChange={(event) => setDefaultStatus(event.target.value)}>{statuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+          <label className="import-field wide">{mode === "31" ? "31 畫面完整原文" : "CSV／試算表資料"}<textarea value={text} onChange={(event) => { setText(event.target.value); resetFeedback(); }} placeholder={mode === "31" ? "請在 31 畫面按 Ctrl+A、Ctrl+C，再貼到此處……" : "水號,姓名,電話,地址,座標,表號,案件原因,收件日期,案件狀態,目前進度"} /></label>
+          <label className="import-field">案件狀態<select value={defaultStatus} onChange={(event) => { const status = event.target.value; setDefaultStatus(status); if (status !== "處理中") setDefaultProgress(""); else if (!defaultProgress) setDefaultProgress("持續處理中"); }}>{statuses.map((status) => <option key={status}>{status}</option>)}</select></label>
+          <label className="import-field">目前進度<select value={defaultProgress} onChange={(event) => setDefaultProgress(event.target.value)} disabled={defaultStatus !== "處理中"}><option value="">未設定</option>{progressOptions.map((progress) => <option key={progress}>{progress}</option>)}</select></label>
           <label className="import-field">收件日期<input value={defaultReceivedDate} onChange={(event) => setDefaultReceivedDate(event.target.value)} placeholder="例如 115/07/27，可留白" /></label>
           <label className="import-field wide">案件原因<input value={defaultReason} onChange={(event) => setDefaultReason(event.target.value)} placeholder="例如：用水量徒增；可留白" /></label>
         </div>
