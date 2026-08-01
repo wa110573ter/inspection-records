@@ -152,7 +152,12 @@ export async function POST(request: Request) {
         );
       }
     }
-    await db.batch(statements as Parameters<typeof db.batch>[0]);
+
+    const [firstStatement, ...remainingStatements] = statements;
+    if (!firstStatement) {
+      return Response.json({ error: "沒有可寫入的匯入資料" }, { status: 400 });
+    }
+    await db.batch([firstStatement, ...remainingStatements]);
 
     return Response.json({ imported: values.length }, { status: 201 });
   } catch (error) {
