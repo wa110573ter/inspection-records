@@ -1,17 +1,7 @@
+import { normalizeCaseStatus } from "../../../case-status.js";
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { getDb } from "../../../../db";
 import { caseRecords, cases } from "../../../../db/schema";
-
-const allowedStatuses = new Set([
-  "待處理",
-  "聯絡未果",
-  "待現勘",
-  "處理中",
-  "待用戶回覆",
-  "待複查",
-  "已結案",
-  "其他",
-]);
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -72,12 +62,13 @@ export async function POST(request: Request) {
       return Response.json({ error: "一次最多匯入 500 件案件" }, { status: 400 });
     }
 
-    const defaultStatus = clean(payload.defaultStatus) || "處理中";
+    const defaultStatusText = clean(payload.defaultStatus) || "處理中";
+    const defaultStatus = normalizeCaseStatus(defaultStatusText, "");
     const defaultReason = clean(payload.defaultReason);
     const defaultDateRaw = clean(payload.defaultReceivedDate);
     const defaultReceivedDate = normalizeDate(defaultDateRaw);
 
-    if (!allowedStatuses.has(defaultStatus)) {
+    if (!defaultStatus) {
       return Response.json({ error: "預設案件狀態無效" }, { status: 400 });
     }
     if (defaultDateRaw && !defaultReceivedDate) {
@@ -92,13 +83,17 @@ export async function POST(request: Request) {
     const values = rows.map((row, index) => {
       const rowNumber = index + 2;
       const waterNumber = clean(row.waterNumber).replace(/[\s-]/g, "").toUpperCase();
-      const status = clean(row.status) || defaultStatus;
+      const rowStatusText = clean(row.status);
+      const normalizedStatus = normalizeCaseStatus(
+        rowStatusText || defaultStatusText,
+        clean(row.customStatus) || (rowStatusText ? "" : defaultStatus.customStatus),
+      );
       const dateRaw = clean(row.receivedDate);
       const receivedDate = dateRaw ? normalizeDate(dateRaw) : defaultReceivedDate || "";
 
       if (!waterNumber) errors.push(`第 ${rowNumber} 列：缺少水號`);
-      if (!allowedStatuses.has(status)) {
-        errors.push(`第 ${rowNumber} 列：案件狀態「${status}」不正確`);
+      if (!normalizedStatus) {
+        errors.push(`第 ${rowNumber} 列：案件狀態「${rowStatusText || defaultStatusText}」不正確`);
       }
       if (dateRaw && !receivedDate) {
         errors.push(`第 ${rowNumber} 列：收件日期「${dateRaw}」格式不正確`);
@@ -115,8 +110,8 @@ export async function POST(request: Request) {
         meterNumber: clean(row.meterNumber),
         reason: clean(row.reason) || defaultReason,
         receivedDate: receivedDate || "",
-        status,
-        customStatus: clean(row.customStatus),
+        status: normalizedStatus?.status || "處理中",
+        customStatus: normalizedStatus?.customStatus || "",
         rawText: clean(row.rawText),
         createdAt: now,
         updatedAt: now,
@@ -134,25 +129,29 @@ export async function POST(request: Request) {
     }
 
     const db = getDb();
+    const statements = [];
     for (const value of values) {
       const { rawText, ...caseValue } = value;
-      await db.insert(cases).values(caseValue);
+      statements.push(db.insert(cases).values(caseValue));
       if (rawText) {
-        await db.insert(caseRecords).values({
-          id: crypto.randomUUID(),
-          caseId: value.id,
-          ownerEmail: user.email,
-          date: value.receivedDate || localDate(),
-          method: "31畫面匯入",
-          pointer: "",
-          process: `【31畫面完整原始資料】\n${rawText}`,
-          result: "已自動擷取重要欄位，完整原文另存保留",
-          nextStep: "請核對擷取欄位；後續新增紀錄不會覆蓋本筆原始資料",
-          followUpDate: "",
-          createdAt: now,
-        });
+        statements.push(
+          db.insert(caseRecords).values({
+            id: crypto.randomUUID(),
+            caseId: value.id,
+            ownerEmail: user.email,
+            date: value.receivedDate || localDate(),
+            method: "31畫面匯入",
+            pointer: "",
+            process: `【31畫面完整原始資料】\n${rawText}`,
+            result: "已自動擷取重要欄位，完整原文另存保留",
+            nextStep: "請核對擷取欄位；後續新增紀錄不會覆蓋本筆原始資料",
+            followUpDate: "",
+            createdAt: now,
+          }),
+        );
       }
     }
+    await db.batch(statements as Parameters<typeof db.batch>[0]);
 
     return Response.json({ imported: values.length }, { status: 201 });
   } catch (error) {
