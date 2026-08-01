@@ -224,12 +224,6 @@ text = replace_once(
     '                  disabled={busy || selected.status !== "處理中"}\n                >\n                  <option value="">未設定</option>\n                  {progressOptions.map((progress) => (',
     "detail progress disabled",
 )
-text = replace_once(
-    text,
-    '                placeholder="搜尋水號、姓名、地址、表號"',
-    '                placeholder="搜尋水號、姓名、地址、表號或處理內容"',
-    "search placeholder",
-)
 path.write_text(text)
 
 
