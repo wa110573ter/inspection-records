@@ -152,7 +152,6 @@ const nextStepOptions = [
 
 const trackingOptions = [
   ["all", "全部追蹤狀態"],
-  ["open", "未結案"],
   ["today", "今日要追蹤"],
   ["overdue", "已逾期"],
   ["threeDays", "3日內要追蹤"],
@@ -311,7 +310,6 @@ function matchesTrackingFilter(item: InspectionCase, trackingFilter: TrackingFil
   const nextDate = activeFollowUpDate(item);
   const currentDate = today();
   if (trackingFilter === "all") return true;
-  if (trackingFilter === "open") return item.status !== "已結案";
   if (trackingFilter === "closed") return item.status === "已結案";
   if (item.status === "已結案") return false;
   if (trackingFilter === "today") return nextDate === currentDate;
