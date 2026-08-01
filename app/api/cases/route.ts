@@ -1,4 +1,5 @@
 import { desc, eq } from "drizzle-orm";
+import { coerceCaseStatus, normalizeCaseStatus } from "../../case-status.js";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { getDb } from "../../../db";
 import { attachments, caseRecords, cases } from "../../../db/schema";
@@ -33,21 +34,39 @@ export async function GET() {
       .where(eq(attachments.ownerEmail, user.email))
       .orderBy(desc(attachments.createdAt));
 
+    const caseFiles = new Map<string, Array<ReturnType<typeof withAttachmentUrl>>>();
+    const recordFiles = new Map<string, Array<ReturnType<typeof withAttachmentUrl>>>();
+    for (const file of fileRows) {
+      const fileWithUrl = withAttachmentUrl(file);
+      if (file.recordId) {
+        const existing = recordFiles.get(file.recordId) || [];
+        existing.push(fileWithUrl);
+        recordFiles.set(file.recordId, existing);
+      } else {
+        const existing = caseFiles.get(file.caseId) || [];
+        existing.push(fileWithUrl);
+        caseFiles.set(file.caseId, existing);
+      }
+    }
+
+    const recordsByCase = new Map<string, Array<(typeof recordRows)[number] & { attachments: Array<ReturnType<typeof withAttachmentUrl>> }>>();
+    for (const record of recordRows) {
+      const existing = recordsByCase.get(record.caseId) || [];
+      existing.push({ ...record, attachments: recordFiles.get(record.id) || [] });
+      recordsByCase.set(record.caseId, existing);
+    }
+
     return Response.json({
-      cases: caseRows.map((item) => ({
-        ...item,
-        attachments: fileRows
-          .filter((file) => file.caseId === item.id && !file.recordId)
-          .map(withAttachmentUrl),
-        records: recordRows
-          .filter((record) => record.caseId === item.id)
-          .map((record) => ({
-            ...record,
-            attachments: fileRows
-              .filter((file) => file.recordId === record.id)
-              .map(withAttachmentUrl),
-          })),
-      })),
+      cases: caseRows.map((item) => {
+        const normalized = coerceCaseStatus(item.status, item.customStatus);
+        return {
+          ...item,
+          status: normalized.status,
+          customStatus: normalized.customStatus,
+          attachments: caseFiles.get(item.id) || [],
+          records: recordsByCase.get(item.id) || [],
+        };
+      }),
     });
   } catch (error) {
     return Response.json(
@@ -68,6 +87,12 @@ export async function POST(request: Request) {
       return Response.json({ error: "請輸入水號" }, { status: 400 });
     }
 
+    const requestedStatus = clean(payload.status) || "待處理";
+    const normalizedStatus = normalizeCaseStatus(requestedStatus, payload.customStatus);
+    if (!normalizedStatus) {
+      return Response.json({ error: "案件狀態無效" }, { status: 400 });
+    }
+
     const now = new Date().toISOString();
     const newCase = {
       id: crypto.randomUUID(),
@@ -80,8 +105,8 @@ export async function POST(request: Request) {
       meterNumber: clean(payload.meterNumber),
       reason: clean(payload.reason),
       receivedDate: clean(payload.receivedDate),
-      status: clean(payload.status) || "待處理",
-      customStatus: clean(payload.customStatus),
+      status: normalizedStatus.status,
+      customStatus: normalizedStatus.customStatus,
       createdAt: now,
       updatedAt: now,
     };
