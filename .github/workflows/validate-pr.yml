@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - agent/date-timeline-dropdowns
+      - agent/journal-production-smoke
   workflow_dispatch:
 
 permissions:
@@ -80,6 +81,54 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit "$code"
 
+      - name: Production Site HTTP smoke test
+        id: site
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          : > site-smoke.log
+          failed=0
+          for url in \
+            'https://inspection-records.wa110573ter.chatgpt.site/' \
+            'https://inspection-records.wa110573ter.chatgpt.site/adjustment' \
+            'https://inspection-records.wa110573ter.chatgpt.site/journal'
+          do
+            safe_name=$(printf '%s' "$url" | sed 's#https://##; s#[^A-Za-z0-9]#_#g')
+            header_file="site-${safe_name}-headers.txt"
+            status=$(curl \
+              --silent \
+              --show-error \
+              --max-time 30 \
+              --output /dev/null \
+              --dump-header "$header_file" \
+              --write-out '%{http_code}' \
+              "$url")
+            curl_code=$?
+            {
+              echo "url=$url"
+              echo "curl_exit=$curl_code"
+              echo "http_status=$status"
+              echo "headers:"
+              cat "$header_file" 2>/dev/null || true
+              echo "---"
+            } | tee -a site-smoke.log
+
+            if [ "$curl_code" -ne 0 ]; then
+              failed=1
+              continue
+            fi
+            case "$status" in
+              200|301|302|303|307|308|401|403)
+                ;;
+              *)
+                failed=1
+                ;;
+            esac
+          done
+          echo "exit_code=$failed" >> "$GITHUB_OUTPUT"
+          exit "$failed"
+
       - name: Upload validation reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -90,6 +139,8 @@ jobs:
             eslint.log
             test.log
             artifact.log
+            site-smoke.log
+            site-*-headers.txt
           if-no-files-found: ignore
 
       - name: Final validation gate
@@ -100,7 +151,9 @@ jobs:
           echo "ESLint: ${{ steps.lint.outputs.exit_code }}"
           echo "Tests: ${{ steps.test.outputs.exit_code }}"
           echo "Artifact: ${{ steps.artifact.outputs.exit_code }}"
+          echo "Site: ${{ steps.site.outputs.exit_code }}"
           test "${{ steps.typecheck.outputs.exit_code }}" = "0"
           test "${{ steps.lint.outputs.exit_code }}" = "0"
           test "${{ steps.test.outputs.exit_code }}" = "0"
           test "${{ steps.artifact.outputs.exit_code }}" = "0"
+          test "${{ steps.site.outputs.exit_code }}" = "0"
