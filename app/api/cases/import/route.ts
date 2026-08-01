@@ -50,6 +50,7 @@ export async function POST(request: Request) {
     const payload = (await request.json()) as {
       rows?: ImportRow[];
       defaultStatus?: string;
+      defaultCustomStatus?: string;
       defaultReason?: string;
       defaultReceivedDate?: string;
     };
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
     }
 
     const defaultStatusText = clean(payload.defaultStatus) || "處理中";
-    const defaultStatus = normalizeCaseStatus(defaultStatusText, "");
+    const defaultStatus = normalizeCaseStatus(defaultStatusText, payload.defaultCustomStatus);
     const defaultReason = clean(payload.defaultReason);
     const defaultDateRaw = clean(payload.defaultReceivedDate);
     const defaultReceivedDate = normalizeDate(defaultDateRaw);
