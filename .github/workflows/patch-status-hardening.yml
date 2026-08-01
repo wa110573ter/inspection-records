@@ -1,9 +1,9 @@
 name: Patch status hardening
 
 on:
-  push:
-    branches:
-      - agent/status-bug-hardening
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,13 +14,14 @@ concurrency:
 
 jobs:
   patch:
-    if: github.actor != 'github-actions[bot]'
+    if: github.head_ref == 'agent/status-bug-hardening' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
         uses: actions/checkout@v4
         with:
           ref: agent/status-bug-hardening
+          fetch-depth: 0
 
       - name: Apply UI patches
         run: python scripts/patch-status-hardening.py
