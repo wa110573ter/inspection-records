@@ -150,17 +150,7 @@ const nextStepOptions = [
   "轉請相關單位處理",
 ];
 
-const trackingOptions = [
-  ["all", "全部追蹤狀態"],
-  ["today", "今日要追蹤"],
-  ["overdue", "已逾期"],
-  ["threeDays", "3日內要追蹤"],
-  ["noDate", "未設定追蹤日期"],
-  ["inactive7", "最近7天未處理"],
-  ["closed", "已結案"],
-] as const;
-
-type TrackingFilter = (typeof trackingOptions)[number][0];
+type TrackingFilter = "all" | "today" | "closed";
 
 const extraStyles = `
   .detail-actions,.form-actions,.record-actions,.attachment-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -202,9 +192,6 @@ const extraStyles = `
   .generate-record{grid-column:1/-1;min-height:44px;border:1px solid #8bb0e5;border-radius:11px;background:#eaf2fd;color:#1557b0;font-weight:900;cursor:pointer}
   .status-suggestion{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border:1px solid #f0cf7a;border-radius:12px;background:#fff9e8;color:#765610;font-size:.76rem;font-weight:800}
   .status-suggestion button{min-height:36px;border:0;border-radius:9px;background:#ad7c08;color:#fff;padding:0 12px;font-weight:900;cursor:pointer}
-  .tracking-filter-bar{display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0}
-  .tracking-filter-bar label{color:#40506a;font-size:.78rem;font-weight:900;white-space:nowrap}
-  .tracking-filter-bar select{width:min(310px,100%);min-height:44px;border:1px solid #bdcad9;border-radius:11px;background:#fff;color:#17253d;padding:0 11px;font-weight:800}
   .date-overview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0 22px}
   .date-overview-item{padding:14px;border:1px solid #d7e1ee;border-radius:15px;background:#f8fbff}
   .date-overview-item span{display:block;color:#6a778c;font-size:.72rem;font-weight:800}
@@ -231,8 +218,6 @@ const extraStyles = `
     .picker-title,.generate-record,.status-suggestion{grid-column:1}
     .picker-title,.status-suggestion{flex-direction:column}
     .status-suggestion button{width:100%}
-    .tracking-filter-bar{align-items:stretch;flex-direction:column}
-    .tracking-filter-bar select{width:100%}
     .date-overview{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px}
     .date-overview-item{padding:12px}
   }
@@ -243,15 +228,6 @@ function today() {
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function addDays(value: string, days: number) {
-  const date = new Date(`${value}T00:00:00`);
-  date.setDate(date.getDate() + days);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
@@ -302,24 +278,12 @@ function activeFollowUpDate(item: InspectionCase) {
   return item.records.find((record) => record.followUpDate)?.followUpDate || "";
 }
 
-function latestActionDate(item: InspectionCase) {
-  return item.records[0]?.date || item.receivedDate;
-}
-
 function matchesTrackingFilter(item: InspectionCase, trackingFilter: TrackingFilter) {
   const nextDate = activeFollowUpDate(item);
   const currentDate = today();
   if (trackingFilter === "all") return true;
   if (trackingFilter === "closed") return item.status === "已結案";
-  if (item.status === "已結案") return false;
-  if (trackingFilter === "today") return nextDate === currentDate;
-  if (trackingFilter === "overdue") return Boolean(nextDate && nextDate < currentDate);
-  if (trackingFilter === "threeDays") {
-    return Boolean(nextDate && nextDate >= currentDate && nextDate <= addDays(currentDate, 3));
-  }
-  if (trackingFilter === "noDate") return !nextDate;
-  if (trackingFilter === "inactive7") return latestActionDate(item) < addDays(currentDate, -7);
-  return true;
+  return item.status !== "已結案" && nextDate === currentDate;
 }
 
 function mapCoordinates(value: string) {
@@ -955,8 +919,6 @@ export default function InspectionApp({ userName }: { userName: string }) {
     [cases],
   );
 
-  const trackingLabel = trackingOptions.find(([value]) => value === trackingFilter)?.[1] || "全部追蹤狀態";
-
   function openCase(id: string) {
     setSelectedId(id);
     setEditingCase(false);
@@ -1315,18 +1277,6 @@ export default function InspectionApp({ userName }: { userName: string }) {
                 </button>
               ))}
             </div>
-            <div className="tracking-filter-bar">
-              <label htmlFor="tracking-filter">追蹤篩選</label>
-              <select
-                id="tracking-filter"
-                value={trackingFilter}
-                onChange={(event) => setTrackingFilter(event.target.value as TrackingFilter)}
-              >
-                {trackingOptions.map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-            </div>
           </section>
 
           <section className="case-list">
@@ -1335,7 +1285,7 @@ export default function InspectionApp({ userName }: { userName: string }) {
                 <p className="eyebrow">案件清單</p>
                 <h2>
                   {filter === "全部" ? "全部案件" : filter}
-                  {trackingFilter !== "all" ? `｜${trackingLabel}` : ""}
+                  {trackingFilter === "today" ? "｜今日追蹤" : ""}
                 </h2>
               </div>
               <span>{visibleCases.length} 件</span>
