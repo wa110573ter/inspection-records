@@ -176,15 +176,14 @@ async function optimizeInputFiles(input: HTMLInputElement) {
   input.setAttribute("aria-busy", "true");
 
   try {
-    const optimizedFiles = await Promise.all(
-      files.map(async (file) => {
-        try {
-          return await optimizeImage(file);
-        } catch {
-          return file;
-        }
-      }),
-    );
+    const optimizedFiles: File[] = [];
+    for (const file of files) {
+      try {
+        optimizedFiles.push(await optimizeImage(file));
+      } catch {
+        optimizedFiles.push(file);
+      }
+    }
 
     const transfer = new DataTransfer();
     optimizedFiles.forEach((file) => transfer.items.add(file));
