@@ -1,22 +1,24 @@
 "use client";
 
 import { useEffect } from "react";
+import {
+  formatFileSize,
+  isOptimizableImage,
+  optimizeFiles,
+} from "./image-optimizer";
 
-const TARGET_IMAGE_SIZE = 4 * 1024 * 1024;
-const MAX_IMAGE_EDGE = 2560;
-const MIN_IMAGE_EDGE = 1600;
+type ProcessingEntry = {
+  token: symbol;
+  promise: Promise<void>;
+};
 
-const inputProcessing = new WeakMap<HTMLInputElement, Promise<void>>();
+const inputProcessing = new WeakMap<HTMLInputElement, ProcessingEntry>();
 const waitingForms = new WeakSet<HTMLFormElement>();
 
 function enablePhotoLibrary(root: ParentNode) {
   root.querySelectorAll<HTMLInputElement>('input[type="file"][capture]').forEach((input) => {
     input.removeAttribute("capture");
   });
-}
-
-function formatFileSize(bytes: number) {
-  return `${(bytes / 1024 / 1024).toFixed(bytes >= 10 * 1024 * 1024 ? 1 : 2)} MB`;
 }
 
 function getStatusNode(input: HTMLInputElement) {
@@ -38,177 +40,53 @@ function getStatusNode(input: HTMLInputElement) {
   return status;
 }
 
-function isHeifImage(file: File) {
-  return /image\/(heic|heif)/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
-}
-
-type DecodedImage = {
-  source: CanvasImageSource;
-  width: number;
-  height: number;
-  cleanup: () => void;
-};
-
-async function decodeImage(file: File): Promise<DecodedImage> {
-  if (typeof createImageBitmap === "function") {
-    try {
-      const bitmap = await createImageBitmap(file);
-      return {
-        source: bitmap,
-        width: bitmap.width,
-        height: bitmap.height,
-        cleanup: () => bitmap.close(),
-      };
-    } catch {
-      // Safari 對部分 HEIC 檔案會改由 img 元素解碼。
-    }
-  }
-
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const image = new Image();
-    image.decoding = "async";
-    image.onload = () => {
-      resolve({
-        source: image,
-        width: image.naturalWidth,
-        height: image.naturalHeight,
-        cleanup: () => URL.revokeObjectURL(objectUrl),
-      });
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("無法讀取照片"));
-    };
-    image.src = objectUrl;
-  });
-}
-
-function canvasToJpeg(canvas: HTMLCanvasElement, quality: number) {
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error("照片壓縮失敗"));
-      },
-      "image/jpeg",
-      quality,
-    );
-  });
-}
-
-async function renderJpeg(
-  image: DecodedImage,
-  longestEdge: number,
-  quality: number,
+async function optimizeInputFiles(
+  input: HTMLInputElement,
+  isCurrent: () => boolean,
 ) {
-  const originalLongestEdge = Math.max(image.width, image.height);
-  const scale = Math.min(1, longestEdge / originalLongestEdge);
-  const width = Math.max(1, Math.round(image.width * scale));
-  const height = Math.max(1, Math.round(image.height * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const context = canvas.getContext("2d", { alpha: false });
-  if (!context) throw new Error("瀏覽器無法處理照片");
-
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, width, height);
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = "high";
-  context.drawImage(image.source, 0, 0, width, height);
-  return canvasToJpeg(canvas, quality);
-}
-
-async function optimizeImage(file: File) {
-  const heif = isHeifImage(file);
-  if (!file.type.startsWith("image/") && !heif) return file;
-  if (file.size <= TARGET_IMAGE_SIZE && !heif) return file;
-
-  const image = await decodeImage(file);
-  try {
-    if (!image.width || !image.height) return file;
-
-    const originalLongestEdge = Math.max(image.width, image.height);
-    const attempts = [
-      { edge: Math.min(originalLongestEdge, MAX_IMAGE_EDGE), quality: 0.88 },
-      { edge: Math.min(originalLongestEdge, MAX_IMAGE_EDGE), quality: 0.8 },
-      { edge: Math.min(originalLongestEdge, 2048), quality: 0.8 },
-      { edge: Math.min(originalLongestEdge, MIN_IMAGE_EDGE), quality: 0.76 },
-    ];
-
-    let smallest: Blob | null = null;
-    for (const attempt of attempts) {
-      const blob = await renderJpeg(image, attempt.edge, attempt.quality);
-      if (!smallest || blob.size < smallest.size) smallest = blob;
-      if (blob.size <= TARGET_IMAGE_SIZE) {
-        smallest = blob;
-        break;
-      }
-    }
-
-    if (!smallest) return file;
-    if (!heif && smallest.size >= file.size) return file;
-
-    const jpegName = file.name.replace(/\.[^.]+$/, "") || "photo";
-    return new File([smallest], `${jpegName}.jpg`, {
-      type: "image/jpeg",
-      lastModified: file.lastModified,
-    });
-  } finally {
-    image.cleanup();
-  }
-}
-
-async function optimizeInputFiles(input: HTMLInputElement) {
   const files = Array.from(input.files || []);
-  if (!files.length) return;
-
-  const imageFiles = files.filter((file) => file.type.startsWith("image/") || isHeifImage(file));
-  if (!imageFiles.length) return;
+  if (!files.length || !files.some(isOptimizableImage)) return;
 
   const status = getStatusNode(input);
-  if (status) {
+  if (status && isCurrent()) {
     status.textContent = "正在自動偵測並最佳化照片，完成後會自動繼續…";
     status.style.color = "#1557b0";
   }
   input.setAttribute("aria-busy", "true");
 
   try {
-    const optimizedFiles: File[] = [];
-    for (const file of files) {
-      try {
-        optimizedFiles.push(await optimizeImage(file));
-      } catch {
-        optimizedFiles.push(file);
-      }
+    const result = await optimizeFiles(files);
+    if (!isCurrent()) return;
+
+    if (typeof DataTransfer === "undefined") {
+      throw new Error("此瀏覽器不支援替換上傳檔案");
     }
 
     const transfer = new DataTransfer();
-    optimizedFiles.forEach((file) => transfer.items.add(file));
+    result.files.forEach((file) => transfer.items.add(file));
     input.files = transfer.files;
 
-    const originalSize = files.reduce((total, file) => total + file.size, 0);
-    const optimizedSize = optimizedFiles.reduce((total, file) => total + file.size, 0);
-    const changedCount = optimizedFiles.filter((file, index) => file !== files[index]).length;
-
-    if (status) {
-      if (changedCount > 0) {
-        status.textContent = `已自動最佳化 ${changedCount} 張：${formatFileSize(originalSize)} → ${formatFileSize(optimizedSize)}`;
-        status.style.color = "#237244";
-      } else {
-        status.textContent = "照片大小合適，將直接上傳原檔。";
-        status.style.color = "#51647d";
-      }
+    if (!status) return;
+    if (result.changedCount > 0 && result.failedCount > 0) {
+      status.textContent = `已自動最佳化 ${result.changedCount} 張：${formatFileSize(result.originalImageSize)} → ${formatFileSize(result.optimizedImageSize)}；另有 ${result.failedCount} 張保留原檔。`;
+      status.style.color = "#9a5a12";
+    } else if (result.changedCount > 0) {
+      status.textContent = `已自動最佳化 ${result.changedCount} 張：${formatFileSize(result.originalImageSize)} → ${formatFileSize(result.optimizedImageSize)}`;
+      status.style.color = "#237244";
+    } else if (result.failedCount > 0) {
+      status.textContent = `有 ${result.failedCount} 張照片無法縮小，將改用原始檔案上傳。`;
+      status.style.color = "#9a5a12";
+    } else {
+      status.textContent = "照片大小合適，將直接上傳原檔。";
+      status.style.color = "#51647d";
     }
   } catch {
-    if (status) {
+    if (status && isCurrent()) {
       status.textContent = "此裝置無法自動壓縮，將改以上傳原始檔案。";
       status.style.color = "#9a5a12";
     }
   } finally {
-    input.removeAttribute("aria-busy");
+    if (isCurrent()) input.removeAttribute("aria-busy");
   }
 }
 
@@ -233,10 +111,15 @@ export default function MobileUploadFix() {
       const input = event.target;
       if (!(input instanceof HTMLInputElement) || input.type !== "file") return;
 
-      const task = optimizeInputFiles(input).finally(() => {
-        inputProcessing.delete(input);
-      });
-      inputProcessing.set(input, task);
+      const token = Symbol("image-optimization");
+      const isCurrent = () => inputProcessing.get(input)?.token === token;
+      const promise = Promise.resolve()
+        .then(() => optimizeInputFiles(input, isCurrent))
+        .finally(() => {
+          if (isCurrent()) inputProcessing.delete(input);
+        });
+
+      inputProcessing.set(input, { token, promise });
     };
 
     const handleSubmit = (event: Event) => {
@@ -244,7 +127,7 @@ export default function MobileUploadFix() {
       if (!(form instanceof HTMLFormElement)) return;
 
       const pending = Array.from(form.querySelectorAll<HTMLInputElement>('input[type="file"]'))
-        .map((input) => inputProcessing.get(input))
+        .map((input) => inputProcessing.get(input)?.promise)
         .filter((task): task is Promise<void> => Boolean(task));
       if (!pending.length) return;
 
