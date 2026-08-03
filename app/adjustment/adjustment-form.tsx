@@ -61,10 +61,29 @@ function normalizeWaterNumber(value: string) {
   return value.replace(/[\s-]/g, "").toUpperCase();
 }
 
-function extract(text: string, labels: string[], maxLength = 80) {
-  const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  const pattern = new RegExp(`(?:${escaped.join("|")})\\s*[：:]?\\s*(?:\\r?\\n\\s*)?([^\\r\\n]{1,${maxLength}})`, "i");
-  return text.match(pattern)?.[1]?.trim() || "";
+function normalize31Text(value: string) {
+  return value
+    .normalize("NFKC")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\u00a0/g, " ");
+}
+
+function firstMatch(text: string, patterns: RegExp[]) {
+  for (const pattern of patterns) {
+    const value = text.match(pattern)?.[1]?.trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+function parseRecentPeriods(text: string) {
+  const rows: Array<{ period: string; pointer: string; usage: string }> = [];
+  const rowPattern = /^\s*(\d{5,6})\s+(\d+)\s+(\d+)(?:\s+.*)?$/gm;
+  for (const match of text.matchAll(rowPattern)) {
+    rows.push({ period: match[1], pointer: match[2], usage: match[3] });
+    if (rows.length === 3) break;
+  }
+  return rows;
 }
 
 function number(value: string) {
@@ -136,20 +155,62 @@ export default function AdjustmentForm() {
   };
 
   const parse31 = () => {
-    const text = form.raw31;
-    const waterNumber = normalizeWaterNumber(extract(text, ["水號", "用戶水號"], 40));
+    const text = normalize31Text(form.raw31);
+    const periods = parseRecentPeriods(text);
+    const waterNumber = normalizeWaterNumber(firstMatch(text, [
+      /^\s*水\s*號\s*[：:]?\s*(?:\n\s*)?([0-9A-Z-]+)/mi,
+      /^\s*用戶水號\s*[：:]?\s*(?:\n\s*)?([0-9A-Z-]+)/mi,
+    ]));
+    const customerName = firstMatch(text, [
+      /用戶姓名\s*[：:]?\s*([^\t\n]+?)(?=\s*(?:用戶電話|電話|加退污水費)\s*[：:]|$)/i,
+      /^\s*(?:戶名|姓名)\s*[：:]?\s*(?:\n\s*)?([^\t\n]+)/mi,
+    ]);
+    const phone = firstMatch(text, [
+      /用戶電話\s*[：:]?\s*([0-9()#extEXT\-\s]+)/i,
+      /(?:行動電話|手機|電話)\s*[：:]?\s*([0-9()#extEXT\-\s]+)/i,
+    ]).replace(/\s+/g, "");
+    const address = firstMatch(text, [
+      /^\s*(?:用水地址|住址|地址)\s*[：:]?\s*(?:\n\s*)?([^\t\n]+)/mi,
+    ]);
+    const meterNumber = firstMatch(text, [
+      /^\s*(?:水表號碼|水表編號|表號)\s*[：:]?\s*(?:\n\s*)?([0-9A-Z-]+)/mi,
+    ]);
+    const workArea = firstMatch(text, [
+      /^\s*(?:工作區|抄表工作區)\s*[：:]?\s*(?:\n\s*)?([0-9A-Z-]+)/mi,
+    ]);
+    const diameter = firstMatch(text, [
+      /口\s*徑\s*[：:]?\s*(?:\n\s*)?([0-9.]+)/i,
+      /管線口徑\s*[：:]?\s*(?:\n\s*)?([0-9.]+)/i,
+    ]).replace(/[^0-9.]/g, "");
+    const waterType = firstMatch(text, [
+      /^\s*用水種別\s*[：:]?\s*(?:\n\s*)?([^\t\n ]+)/mi,
+      /^\s*種別\s*[：:]?\s*(?:\n\s*)?([^\t\n ]+)/mi,
+    ]);
+
     setForm((current) => ({
       ...current,
       waterNumber: waterNumber || current.waterNumber,
-      customerName: extract(text, ["用戶姓名", "戶名", "姓名"]) || current.customerName,
-      address: extract(text, ["用水地址", "地址"], 120) || current.address,
-      phone: extract(text, ["行動電話", "手機", "電話"], 40) || current.phone,
-      meterNumber: extract(text, ["水表號碼", "水表編號", "表號"], 40) || current.meterNumber,
-      workArea: extract(text, ["工作區", "抄表工作區"], 20) || current.workArea,
-      diameter: extract(text, ["管線口徑", "口徑"], 20).replace(/[^0-9.]/g, "") || current.diameter,
-      waterType: extract(text, ["用水種別", "種別"], 60) || current.waterType,
+      customerName: customerName || current.customerName,
+      address: address || current.address,
+      phone: phone || current.phone,
+      meterNumber: meterNumber || current.meterNumber,
+      workArea: workArea || current.workArea,
+      diameter: diameter || current.diameter,
+      waterType: waterType || current.waterType,
+      period1: periods[0]?.period || current.period1,
+      pointer1: periods[0]?.pointer || current.pointer1,
+      usage1: periods[0]?.usage || current.usage1,
+      period2: periods[1]?.period || current.period2,
+      pointer2: periods[1]?.pointer || current.pointer2,
+      usage2: periods[1]?.usage || current.usage2,
+      period3: periods[2]?.period || current.period3,
+      pointer3: periods[2]?.pointer || current.pointer3,
+      usage3: periods[2]?.usage || current.usage3,
     }));
-    setMessage("已從31畫面嘗試帶入資料，請再核對欄位。");
+    setMessage(periods.length >= 3
+      ? "已帶入基本資料與最近三期資料，請再核對欄位。"
+      : "已帶入可辨識的基本資料，但最近三期資料不足，請再核對。"
+    );
   };
 
   async function submit(event: FormEvent<HTMLFormElement>) {
