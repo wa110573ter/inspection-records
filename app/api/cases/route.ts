@@ -8,6 +8,17 @@ function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function localDate() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
 function withAttachmentUrl<T extends { id: string }>(file: T) {
   return { ...file, url: `/api/uploads/${file.id}` };
 }
@@ -93,6 +104,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "案件狀態無效" }, { status: 400 });
     }
 
+    const raw31 = clean(payload.raw31);
     const now = new Date().toISOString();
     const newCase = {
       id: crypto.randomUUID(),
@@ -112,9 +124,47 @@ export async function POST(request: Request) {
     };
 
     const db = getDb();
-    await db.insert(cases).values(newCase);
+    const statements = [db.insert(cases).values(newCase)];
+    if (raw31) {
+      statements.push(
+        db.insert(caseRecords).values({
+          id: crypto.randomUUID(),
+          caseId: newCase.id,
+          ownerEmail: user.email,
+          date: newCase.receivedDate || localDate(),
+          method: "31畫面匯入",
+          pointer: "",
+          process: `【31畫面完整原始資料】\n${raw31}`,
+          result: "已自動擷取重要欄位，完整原文另存保留",
+          nextStep: "請核對擷取欄位；後續新增紀錄不會覆蓋本筆原始資料",
+          followUpDate: "",
+          createdAt: now,
+        }),
+      );
+    }
+    await db.batch(statements as [typeof statements[number], ...Array<typeof statements[number]>]);
+
     return Response.json(
-      { case: { ...newCase, attachments: [], records: [] } },
+      {
+        case: {
+          ...newCase,
+          attachments: [],
+          records: raw31
+            ? [{
+                id: "pending-refresh",
+                date: newCase.receivedDate || localDate(),
+                method: "31畫面匯入",
+                pointer: "",
+                process: `【31畫面完整原始資料】\n${raw31}`,
+                result: "已自動擷取重要欄位，完整原文另存保留",
+                nextStep: "請核對擷取欄位；後續新增紀錄不會覆蓋本筆原始資料",
+                followUpDate: "",
+                createdAt: now,
+                attachments: [],
+              }]
+            : [],
+        },
+      },
       { status: 201 },
     );
   } catch (error) {
