@@ -1,4 +1,5 @@
 import { requireChatGPTUser } from "./chatgpt-auth";
+import AppleMapsLinks from "./apple-maps-links";
 import Case31Import from "./case-31-import";
 import CaseDeepLink from "./case-deep-link";
 import InspectionApp from "./inspection-app";
@@ -32,6 +33,7 @@ export default async function Home() {
       <MeterNumberImportFix />
       <Case31Import />
       <CaseDeepLink />
+      <AppleMapsLinks />
       {/* 日期、追蹤與下拉流程皆由 InspectionApp 原生管理。 */}
       <InspectionApp userName={user.displayName} />
       <a href="/journal" style={{ ...floatingLink, bottom: 146 }}>
