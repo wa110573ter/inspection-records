@@ -1,4 +1,5 @@
 import { requireChatGPTUser } from "./chatgpt-auth";
+import Case31Import from "./case-31-import";
 import CaseDeepLink from "./case-deep-link";
 import InspectionApp from "./inspection-app";
 import MeterNumberImportFix from "./meter-number-import-fix";
@@ -29,6 +30,7 @@ export default async function Home() {
     <>
       <MobileUploadFix />
       <MeterNumberImportFix />
+      <Case31Import />
       <CaseDeepLink />
       {/* 日期、追蹤與下拉流程皆由 InspectionApp 原生管理。 */}
       <InspectionApp userName={user.displayName} />
