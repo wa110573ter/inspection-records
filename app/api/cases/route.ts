@@ -124,10 +124,16 @@ export async function POST(request: Request) {
     };
 
     const db = getDb();
-    const statements = [db.insert(cases).values(newCase)];
+
+    // Keep the core case creation independent from the optional 31-text record.
+    // Some hosted D1-compatible environments do not reliably support batch writes,
+    // which previously caused the entire create request to fail.
+    await db.insert(cases).values(newCase);
+
+    let raw31Saved = false;
     if (raw31) {
-      statements.push(
-        db.insert(caseRecords).values({
+      try {
+        await db.insert(caseRecords).values({
           id: crypto.randomUUID(),
           caseId: newCase.id,
           ownerEmail: user.email,
@@ -139,17 +145,19 @@ export async function POST(request: Request) {
           nextStep: "請核對擷取欄位；後續新增紀錄不會覆蓋本筆原始資料",
           followUpDate: "",
           createdAt: now,
-        }),
-      );
+        });
+        raw31Saved = true;
+      } catch (recordError) {
+        console.error("31畫面原文保存失敗，但案件已成功建立", recordError);
+      }
     }
-    await db.batch(statements as [typeof statements[number], ...Array<typeof statements[number]>]);
 
     return Response.json(
       {
         case: {
           ...newCase,
           attachments: [],
-          records: raw31
+          records: raw31Saved
             ? [{
                 id: "pending-refresh",
                 date: newCase.receivedDate || localDate(),
