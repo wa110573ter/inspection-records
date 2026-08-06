@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - agent/date-timeline-dropdowns
+      - agent/today-route
   workflow_dispatch:
 
 permissions:
