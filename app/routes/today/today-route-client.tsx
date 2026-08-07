@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { appleMapsUrl, googleMapsUrl, parseCoordinate } from "../../route-utils";
 
@@ -54,6 +55,11 @@ type RouteData = {
   stops: StopItem[];
 };
 
+type TodayRouteResponse = {
+  cases: CaseItem[];
+  route: RouteData | null;
+};
+
 const today = () =>
   new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Taipei",
@@ -67,6 +73,14 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const data = (await response.json()) as T & { error?: string };
   if (!response.ok) throw new Error(data.error || "操作失敗");
   return data;
+}
+
+async function fetchTodayRouteData(): Promise<TodayRouteResponse> {
+  const [caseResponse, routeResponse] = await Promise.all([
+    jsonRequest<{ cases: CaseItem[] }>("/api/cases"),
+    jsonRequest<{ route: RouteData | null }>(`/api/routes/today?date=${today()}`),
+  ]);
+  return { cases: caseResponse.cases, route: routeResponse.route };
 }
 
 export default function TodayRouteClient() {
@@ -88,16 +102,26 @@ export default function TodayRouteClient() {
   });
 
   const load = async () => {
-    const [caseResponse, routeResponse] = await Promise.all([
-      jsonRequest<{ cases: CaseItem[] }>("/api/cases"),
-      jsonRequest<{ route: RouteData | null }>(`/api/routes/today?date=${today()}`),
-    ]);
-    setCases(caseResponse.cases);
-    setRoute(routeResponse.route);
+    const data = await fetchTodayRouteData();
+    setCases(data.cases);
+    setRoute(data.route);
   };
 
   useEffect(() => {
-    load().catch((error) => setMessage(error instanceof Error ? error.message : "載入失敗"));
+    let cancelled = false;
+    void fetchTodayRouteData()
+      .then((data) => {
+        if (cancelled) return;
+        setCases(data.cases);
+        setRoute(data.route);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setMessage(error instanceof Error ? error.message : "載入失敗");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filteredCases = useMemo(() => {
@@ -111,8 +135,10 @@ export default function TodayRouteClient() {
     });
   }, [cases, search]);
 
-  const activeStop = route?.stops.find((stop) => stop.id === route.currentStopId) ??
-    route?.stops.find((stop) => stop.status === "active") ?? null;
+  const activeStop =
+    route?.stops.find((stop) => stop.id === route.currentStopId) ??
+    route?.stops.find((stop) => stop.status === "active") ??
+    null;
   const completed = route?.stops.filter((stop) => stop.status === "completed").length ?? 0;
   const skipped = route?.stops.filter((stop) => stop.status === "skipped").length ?? 0;
 
@@ -203,52 +229,125 @@ export default function TodayRouteClient() {
           <h1>今日路線</h1>
           <p>{today()}｜公司圖資座標優先</p>
         </div>
-        <a className="route-back" href="/">返回案件</a>
+        <Link className="route-back" href="/">
+          返回案件
+        </Link>
       </header>
 
-      {message && <div className="route-message" role="status">{message}</div>}
+      {message && (
+        <div className="route-message" role="status">
+          {message}
+        </div>
+      )}
 
       {route?.stops.length ? (
         <>
           <section className="route-summary">
-            <div><span>總站數</span><strong>{route.stops.length}</strong></div>
-            <div><span>已完成</span><strong>{completed}</strong></div>
-            <div><span>已略過</span><strong>{skipped}</strong></div>
-            <div><span>剩餘</span><strong>{route.stops.length - completed - skipped}</strong></div>
+            <div>
+              <span>總站數</span>
+              <strong>{route.stops.length}</strong>
+            </div>
+            <div>
+              <span>已完成</span>
+              <strong>{completed}</strong>
+            </div>
+            <div>
+              <span>已略過</span>
+              <strong>{skipped}</strong>
+            </div>
+            <div>
+              <span>剩餘</span>
+              <strong>{route.stops.length - completed - skipped}</strong>
+            </div>
           </section>
 
           {activeStop ? (
             <section className="route-active">
-              <div className="route-progress">第 {activeStop.position}／{route.stops.length} 站</div>
+              <div className="route-progress">
+                第 {activeStop.position}／{route.stops.length} 站
+              </div>
               <h2>{activeStop.customerName || "未填姓名"}</h2>
               <p className="route-reason">{activeStop.reason || "未填案件原因"}</p>
               <dl>
-                <div><dt>水號</dt><dd>{activeStop.waterNumber}</dd></div>
-                <div><dt>電話</dt><dd>{activeStop.phone || "未填"}</dd></div>
-                <div><dt>地址</dt><dd>{activeStop.address || "未填"}</dd></div>
-                <div><dt>表號</dt><dd>{activeStop.meterNumber || "未填"}</dd></div>
-                <div><dt>圖資座標</dt><dd>{activeStop.coordinateSnapshot}</dd></div>
+                <div>
+                  <dt>水號</dt>
+                  <dd>{activeStop.waterNumber}</dd>
+                </div>
+                <div>
+                  <dt>電話</dt>
+                  <dd>{activeStop.phone || "未填"}</dd>
+                </div>
+                <div>
+                  <dt>地址</dt>
+                  <dd>{activeStop.address || "未填"}</dd>
+                </div>
+                <div>
+                  <dt>表號</dt>
+                  <dd>{activeStop.meterNumber || "未填"}</dd>
+                </div>
+                <div>
+                  <dt>圖資座標</dt>
+                  <dd>{activeStop.coordinateSnapshot}</dd>
+                </div>
               </dl>
               {activeStop.latestRecord && (
                 <div className="route-latest">
-                  <strong>最近處理：{activeStop.latestRecord.date}｜{activeStop.latestRecord.method}</strong>
+                  <strong>
+                    最近處理：{activeStop.latestRecord.date}｜{activeStop.latestRecord.method}
+                  </strong>
                   <p>{activeStop.latestRecord.process || activeStop.latestRecord.result || "無內容"}</p>
                   {activeStop.latestRecord.nextStep && <p>下一步：{activeStop.latestRecord.nextStep}</p>}
                 </div>
               )}
               <div className="route-actions">
-                <a className="route-primary" href={googleMapsUrl(activeStop.coordinateSnapshot)} target="_blank" rel="noreferrer">Google Maps導航</a>
-                <a className="route-secondary" href={appleMapsUrl(activeStop.coordinateSnapshot)} target="_blank" rel="noreferrer">Apple地圖</a>
-                {activeStop.phone && <a className="route-secondary" href={`tel:${activeStop.phone}`}>撥打電話</a>}
-                <button className="route-primary" type="button" onClick={() => setRecordOpen(true)}>現場記錄並完成</button>
-                <button className="route-secondary" type="button" disabled={busy} onClick={() => updateStop(activeStop, "completed")}>直接標示完成</button>
-                <button className="route-danger" type="button" disabled={busy} onClick={() => updateStop(activeStop, "skipped")}>略過此站</button>
+                <a
+                  className="route-primary"
+                  href={googleMapsUrl(activeStop.coordinateSnapshot)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Google Maps導航
+                </a>
+                <a
+                  className="route-secondary"
+                  href={appleMapsUrl(activeStop.coordinateSnapshot)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Apple地圖
+                </a>
+                {activeStop.phone && (
+                  <a className="route-secondary" href={`tel:${activeStop.phone}`}>
+                    撥打電話
+                  </a>
+                )}
+                <button className="route-primary" type="button" onClick={() => setRecordOpen(true)}>
+                  現場記錄並完成
+                </button>
+                <button
+                  className="route-secondary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => updateStop(activeStop, "completed")}
+                >
+                  直接標示完成
+                </button>
+                <button
+                  className="route-danger"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => updateStop(activeStop, "skipped")}
+                >
+                  略過此站
+                </button>
               </div>
             </section>
           ) : (
             <section className="route-finished">
               <h2>今日路線已完成</h2>
-              <p>完成 {completed} 件，略過 {skipped} 件。</p>
+              <p>
+                完成 {completed} 件，略過 {skipped} 件。
+              </p>
             </section>
           )}
 
@@ -259,9 +358,19 @@ export default function TodayRouteClient() {
                 <span>{stop.position}</span>
                 <div>
                   <strong>{stop.customerName || "未填姓名"}</strong>
-                  <p>{stop.reason}｜{stop.address}</p>
+                  <p>
+                    {stop.reason}｜{stop.address}
+                  </p>
                 </div>
-                <em>{stop.status === "completed" ? "完成" : stop.status === "skipped" ? "略過" : stop.status === "active" ? "目前" : "待辦"}</em>
+                <em>
+                  {stop.status === "completed"
+                    ? "完成"
+                    : stop.status === "skipped"
+                      ? "略過"
+                      : stop.status === "active"
+                        ? "目前"
+                        : "待辦"}
+                </em>
               </article>
             ))}
           </section>
@@ -288,15 +397,26 @@ export default function TodayRouteClient() {
                     onChange={() => toggleCase(item.id)}
                   />
                   <div>
-                    <strong>{item.customerName || "未填姓名"}｜{item.waterNumber}</strong>
-                    <p>{item.reason || "未填原因"}｜{item.address || "未填地址"}</p>
-                    <small>{coordinate.ok ? `圖資座標：${coordinate.value.normalized}` : coordinate.error}</small>
+                    <strong>
+                      {item.customerName || "未填姓名"}｜{item.waterNumber}
+                    </strong>
+                    <p>
+                      {item.reason || "未填原因"}｜{item.address || "未填地址"}
+                    </p>
+                    <small>
+                      {coordinate.ok ? `圖資座標：${coordinate.value.normalized}` : coordinate.error}
+                    </small>
                   </div>
                 </label>
               );
             })}
           </div>
-          <button className="route-create" type="button" disabled={busy || !selected.length} onClick={createRoute}>
+          <button
+            className="route-create"
+            type="button"
+            disabled={busy || !selected.length}
+            onClick={createRoute}
+          >
             {busy ? "建立中…" : `建立今日路線（已選 ${selected.length} 件）`}
           </button>
         </section>
@@ -306,18 +426,77 @@ export default function TodayRouteClient() {
         <div className="route-modal" role="dialog" aria-modal="true" aria-label="現場處理紀錄">
           <div className="route-modal-card">
             <h2>現場處理紀錄</h2>
-            <label>日期<input type="date" value={record.date} onChange={(event) => setRecord({ ...record, date: event.target.value })} /></label>
-            <label>處理方式<select value={record.method} onChange={(event) => setRecord({ ...record, method: event.target.value })}>
-              <option>現場查看</option><option>電話聯絡</option><option>留通知單</option><option>其他</option>
-            </select></label>
-            <label>現場指針<input value={record.pointer} onChange={(event) => setRecord({ ...record, pointer: event.target.value })} /></label>
-            <label>處理經過<textarea rows={4} value={record.process} onChange={(event) => setRecord({ ...record, process: event.target.value })} /></label>
-            <label>處理結果<textarea rows={3} value={record.result} onChange={(event) => setRecord({ ...record, result: event.target.value })} /></label>
-            <label>下一步<textarea rows={2} value={record.nextStep} onChange={(event) => setRecord({ ...record, nextStep: event.target.value })} /></label>
-            <label>追蹤日期<input type="date" value={record.followUpDate} onChange={(event) => setRecord({ ...record, followUpDate: event.target.value })} /></label>
+            <label>
+              日期
+              <input
+                type="date"
+                value={record.date}
+                onChange={(event) => setRecord({ ...record, date: event.target.value })}
+              />
+            </label>
+            <label>
+              處理方式
+              <select
+                value={record.method}
+                onChange={(event) => setRecord({ ...record, method: event.target.value })}
+              >
+                <option>現場查看</option>
+                <option>電話聯絡</option>
+                <option>留通知單</option>
+                <option>其他</option>
+              </select>
+            </label>
+            <label>
+              現場指針
+              <input
+                value={record.pointer}
+                onChange={(event) => setRecord({ ...record, pointer: event.target.value })}
+              />
+            </label>
+            <label>
+              處理經過
+              <textarea
+                rows={4}
+                value={record.process}
+                onChange={(event) => setRecord({ ...record, process: event.target.value })}
+              />
+            </label>
+            <label>
+              處理結果
+              <textarea
+                rows={3}
+                value={record.result}
+                onChange={(event) => setRecord({ ...record, result: event.target.value })}
+              />
+            </label>
+            <label>
+              下一步
+              <textarea
+                rows={2}
+                value={record.nextStep}
+                onChange={(event) => setRecord({ ...record, nextStep: event.target.value })}
+              />
+            </label>
+            <label>
+              追蹤日期
+              <input
+                type="date"
+                value={record.followUpDate}
+                onChange={(event) => setRecord({ ...record, followUpDate: event.target.value })}
+              />
+            </label>
             <div className="route-modal-actions">
-              <button type="button" className="route-secondary" onClick={() => setRecordOpen(false)}>取消</button>
-              <button type="button" className="route-primary" disabled={busy} onClick={saveRecordAndComplete}>{busy ? "儲存中…" : "儲存並完成本站"}</button>
+              <button type="button" className="route-secondary" onClick={() => setRecordOpen(false)}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="route-primary"
+                disabled={busy}
+                onClick={saveRecordAndComplete}
+              >
+                {busy ? "儲存中…" : "儲存並完成本站"}
+              </button>
             </div>
           </div>
         </div>
