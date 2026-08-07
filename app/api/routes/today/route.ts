@@ -102,7 +102,13 @@ export async function POST(request: Request) {
     const payload = (await request.json()) as Record<string, unknown>;
     const routeDate = clean(payload.routeDate) || localDate();
     const caseIds = Array.isArray(payload.caseIds)
-      ? [...new Set(payload.caseIds.filter((item): item is string => typeof item === "string" && item.trim()))]
+      ? [
+          ...new Set(
+            payload.caseIds.filter(
+              (item): item is string => typeof item === "string" && item.trim().length > 0,
+            ),
+          ),
+        ]
       : [];
     if (!caseIds.length) return Response.json({ error: "請至少選擇一件案件" }, { status: 400 });
 
@@ -151,7 +157,11 @@ export async function POST(request: Request) {
 
     let routeId = existing[0]?.id;
     if (routeId) {
-      await db.delete(dailyRouteStops).where(and(eq(dailyRouteStops.routeId, routeId), eq(dailyRouteStops.ownerEmail, user.email)));
+      await db
+        .delete(dailyRouteStops)
+        .where(
+          and(eq(dailyRouteStops.routeId, routeId), eq(dailyRouteStops.ownerEmail, user.email)),
+        );
       await db
         .update(dailyRoutes)
         .set({
