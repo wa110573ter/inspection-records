@@ -36,6 +36,9 @@ export default async function Home() {
       <AppleMapsLinks />
       {/* 日期、追蹤與下拉流程皆由 InspectionApp 原生管理。 */}
       <InspectionApp userName={user.displayName} />
+      <a href="/routes/today" style={{ ...floatingLink, bottom: 206 }}>
+        今日路線
+      </a>
       <a href="/journal" style={{ ...floatingLink, bottom: 146 }}>
         處理日誌
       </a>

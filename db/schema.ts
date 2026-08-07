@@ -71,3 +71,59 @@ export const attachments = sqliteTable(
     index("attachments_owner_idx").on(table.ownerEmail),
   ],
 );
+
+export const dailyRoutes = sqliteTable(
+  "daily_routes",
+  {
+    id: text("id").primaryKey(),
+    ownerEmail: text("owner_email").notNull(),
+    routeDate: text("route_date").notNull(),
+    startLabel: text("start_label").notNull().default("虎尾服務營運所"),
+    startCoordinates: text("start_coordinates").notNull().default(""),
+    endLabel: text("end_label").notNull().default("不限"),
+    endCoordinates: text("end_coordinates").notNull().default(""),
+    status: text("status").notNull().default("draft"),
+    currentStopId: text("current_stop_id").notNull().default(""),
+    startedAt: text("started_at").notNull().default(""),
+    completedAt: text("completed_at").notNull().default(""),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("daily_routes_owner_date_idx").on(table.ownerEmail, table.routeDate),
+    index("daily_routes_owner_status_idx").on(table.ownerEmail, table.status),
+  ],
+);
+
+export const dailyRouteStops = sqliteTable(
+  "daily_route_stops",
+  {
+    id: text("id").primaryKey(),
+    routeId: text("route_id")
+      .notNull()
+      .references(() => dailyRoutes.id, { onDelete: "cascade" }),
+    caseId: text("case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "cascade" }),
+    ownerEmail: text("owner_email").notNull(),
+    position: integer("position").notNull(),
+    coordinateSnapshot: text("coordinate_snapshot").notNull().default(""),
+    coordinateSourceSnapshot: text("coordinate_source_snapshot")
+      .notNull()
+      .default("unknown"),
+    status: text("status").notNull().default("pending"),
+    arrivedAt: text("arrived_at").notNull().default(""),
+    completedAt: text("completed_at").notNull().default(""),
+    skippedReason: text("skipped_reason").notNull().default(""),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("daily_route_stops_route_position_idx").on(
+      table.routeId,
+      table.position,
+    ),
+    index("daily_route_stops_owner_idx").on(table.ownerEmail),
+    index("daily_route_stops_case_idx").on(table.caseId),
+  ],
+);

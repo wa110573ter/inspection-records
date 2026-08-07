@@ -46,9 +46,17 @@ export async function POST(
     createdAt: now,
   };
 
-  await db.batch([
-    db.insert(caseRecords).values(record),
-    db.update(cases).set({ updatedAt: now }).where(eq(cases.id, id)),
-  ]);
+  // Keep the record write independent from the case timestamp update. Some
+  // hosted D1-compatible environments do not reliably support batch writes.
+  await db.insert(caseRecords).values(record);
+  try {
+    await db
+      .update(cases)
+      .set({ updatedAt: now })
+      .where(and(eq(cases.id, id), eq(cases.ownerEmail, user.email)));
+  } catch (updateError) {
+    console.error("處理紀錄已儲存，但案件更新時間寫入失敗", updateError);
+  }
+
   return Response.json({ record: { ...record, attachments: [] } }, { status: 201 });
 }
