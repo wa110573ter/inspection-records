@@ -187,13 +187,19 @@ export async function POST(request: Request) {
     return error("不支援的改單格式。");
   }
 
-  const file = await generateOds(template, values);
-  const filename = `${safeFilePart(reportNo)}_${typeLabel}_${safeFilePart(waterNumber)}.ods`;
-  return new Response(file, {
-    headers: {
-      "content-type": "application/vnd.oasis.opendocument.spreadsheet",
-      "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
-      "cache-control": "no-store",
-    },
-  });
+  try {
+    const file = await generateOds(template, values);
+    const filename = `${safeFilePart(reportNo)}_${typeLabel}_${safeFilePart(waterNumber)}.ods`;
+    return new Response(file, {
+      headers: {
+        "content-type": "application/vnd.oasis.opendocument.spreadsheet",
+        "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        "cache-control": "no-store",
+      },
+    });
+  } catch (cause) {
+    console.error("adjustment-ods generation failed", cause);
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    return error(`ODS 產生器內部錯誤：${detail}`, 500);
+  }
 }
