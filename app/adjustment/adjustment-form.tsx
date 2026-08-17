@@ -95,6 +95,25 @@ function diff(oldValue: string, newValue: string) {
   return number(oldValue) - number(newValue);
 }
 
+async function readApiError(response: Response) {
+  const body = (await response.text()).trim();
+  if (!body) {
+    if (response.status === 401) return "登入已失效，請重新登入後再試。";
+    return `產生 ODS 失敗（HTTP ${response.status}）。伺服器沒有回傳錯誤內容，請重新整理後再試。`;
+  }
+
+  try {
+    const data = JSON.parse(body) as { error?: unknown; message?: unknown };
+    if (typeof data.error === "string" && data.error.trim()) return data.error;
+    if (typeof data.message === "string" && data.message.trim()) return data.message;
+  } catch {
+    // Non-JSON responses can happen when the runtime itself fails before the API handler returns.
+  }
+
+  const plain = body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return plain.slice(0, 500) || `產生 ODS 失敗（HTTP ${response.status}）`;
+}
+
 function Field({
   label,
   name,
@@ -224,10 +243,10 @@ export default function AdjustmentForm() {
         body: JSON.stringify(form),
       });
       if (!response.ok) {
-        const data = (await response.json()) as { error?: string };
-        throw new Error(data.error || "產生 ODS 失敗");
+        throw new Error(await readApiError(response));
       }
       const blob = await response.blob();
+      if (!blob.size) throw new Error("ODS 產生失敗：伺服器回傳空白檔案。");
       const disposition = response.headers.get("content-disposition") || "";
       const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/)?.[1];
       const filename = encoded ? decodeURIComponent(encoded) : "改單報告.ods";
