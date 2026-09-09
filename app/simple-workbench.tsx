@@ -274,7 +274,9 @@ function RecordModal({ caseId, onClose, onSaved }: { caseId: string; onClose: ()
     }
   }, [caseId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    queueMicrotask(() => { void load(); });
+  }, [load]);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -430,18 +432,20 @@ export default function SimpleWorkbench({ userName }: { userName: string }) {
   }, []);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(selectionKey);
-      if (raw) {
-        const parsed = JSON.parse(raw) as unknown;
-        if (Array.isArray(parsed)) setSelected(new Set(parsed.filter((item): item is string => typeof item === "string")));
+    queueMicrotask(() => {
+      try {
+        const raw = localStorage.getItem(selectionKey);
+        if (raw) {
+          const parsed = JSON.parse(raw) as unknown;
+          if (Array.isArray(parsed)) setSelected(new Set(parsed.filter((item): item is string => typeof item === "string")));
+        }
+      } catch {
+        // Selection is only a convenience state; ignore malformed browser storage.
+      } finally {
+        setHydrated(true);
       }
-    } catch {
-      // Selection is only a convenience state; ignore malformed browser storage.
-    } finally {
-      setHydrated(true);
-    }
-    void loadCases();
+      void loadCases();
+    });
   }, [loadCases]);
 
   useEffect(() => {
