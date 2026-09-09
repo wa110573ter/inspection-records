@@ -5,5 +5,5 @@ export const dynamic = "force-dynamic";
 
 export default async function TodayRoutePage() {
   await requireChatGPTUser("/routes/today");
-  redirect("/?selectedMap=1");
+  redirect("/");
 }
