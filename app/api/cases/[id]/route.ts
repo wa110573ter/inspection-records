@@ -1,11 +1,67 @@
-import { and, eq } from "drizzle-orm";
-import { normalizeCaseStatus } from "../../../case-status.js";
+import { and, desc, eq } from "drizzle-orm";
+import { coerceCaseStatus, normalizeCaseStatus } from "../../../case-status.js";
 import { getChatGPTUser } from "../../../chatgpt-auth";
 import { getBucket, getDb } from "../../../../db";
 import { attachments, caseRecords, cases } from "../../../../db/schema";
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function withAttachmentUrl<T extends { id: string }>(file: T) {
+  return { ...file, url: `/api/uploads/${file.id}` };
+}
+
+export async function GET(
+  _request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  const user = await getChatGPTUser();
+  if (!user) return Response.json({ error: "請先登入" }, { status: 401 });
+
+  const { id } = await context.params;
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(cases)
+    .where(and(eq(cases.id, id), eq(cases.ownerEmail, user.email)))
+    .limit(1);
+  if (!rows.length) return Response.json({ error: "找不到案件" }, { status: 404 });
+
+  const recordRows = await db
+    .select()
+    .from(caseRecords)
+    .where(and(eq(caseRecords.caseId, id), eq(caseRecords.ownerEmail, user.email)))
+    .orderBy(desc(caseRecords.date), desc(caseRecords.createdAt));
+  const fileRows = await db
+    .select()
+    .from(attachments)
+    .where(and(eq(attachments.caseId, id), eq(attachments.ownerEmail, user.email)))
+    .orderBy(desc(attachments.createdAt));
+
+  const caseFiles = fileRows.filter((file) => !file.recordId).map(withAttachmentUrl);
+  const recordFiles = new Map<string, Array<ReturnType<typeof withAttachmentUrl>>>();
+  for (const file of fileRows) {
+    if (!file.recordId) continue;
+    const existing = recordFiles.get(file.recordId) || [];
+    existing.push(withAttachmentUrl(file));
+    recordFiles.set(file.recordId, existing);
+  }
+
+  const item = rows[0];
+  const normalized = coerceCaseStatus(item.status, item.customStatus);
+  return Response.json({
+    case: {
+      ...item,
+      status: normalized.status,
+      customStatus: normalized.customStatus,
+      attachments: caseFiles,
+      records: recordRows.map((record) => ({
+        ...record,
+        attachments: recordFiles.get(record.id) || [],
+      })),
+    },
+  });
 }
 
 export async function PATCH(
