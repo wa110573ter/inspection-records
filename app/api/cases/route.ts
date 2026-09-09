@@ -23,7 +23,12 @@ function withAttachmentUrl<T extends { id: string }>(file: T) {
   return { ...file, url: `/api/uploads/${file.id}` };
 }
 
-export async function GET() {
+function normalizeCaseRow<T extends { status: string; customStatus: string }>(item: T) {
+  const normalized = coerceCaseStatus(item.status, item.customStatus);
+  return { ...item, status: normalized.status, customStatus: normalized.customStatus };
+}
+
+export async function GET(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: "請先登入" }, { status: 401 });
 
@@ -34,6 +39,12 @@ export async function GET() {
       .from(cases)
       .where(eq(cases.ownerEmail, user.email))
       .orderBy(desc(cases.updatedAt));
+
+    const summaryOnly = new URL(request.url).searchParams.get("view") === "summary";
+    if (summaryOnly) {
+      return Response.json({ cases: caseRows.map(normalizeCaseRow) });
+    }
+
     const recordRows = await db
       .select()
       .from(caseRecords)
@@ -68,16 +79,11 @@ export async function GET() {
     }
 
     return Response.json({
-      cases: caseRows.map((item) => {
-        const normalized = coerceCaseStatus(item.status, item.customStatus);
-        return {
-          ...item,
-          status: normalized.status,
-          customStatus: normalized.customStatus,
-          attachments: caseFiles.get(item.id) || [],
-          records: recordsByCase.get(item.id) || [],
-        };
-      }),
+      cases: caseRows.map((item) => ({
+        ...normalizeCaseRow(item),
+        attachments: caseFiles.get(item.id) || [],
+        records: recordsByCase.get(item.id) || [],
+      })),
     });
   } catch (error) {
     return Response.json(
@@ -124,10 +130,6 @@ export async function POST(request: Request) {
     };
 
     const db = getDb();
-
-    // Keep the core case creation independent from the optional 31-text record.
-    // Some hosted D1-compatible environments do not reliably support batch writes,
-    // which previously caused the entire create request to fail.
     await db.insert(cases).values(newCase);
 
     let raw31Saved = false;
