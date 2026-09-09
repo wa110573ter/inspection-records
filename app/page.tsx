@@ -1,9 +1,9 @@
 import { requireChatGPTUser } from "./chatgpt-auth";
-import Workbench from "./workbench";
+import SimpleWorkbench from "./simple-workbench";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const user = await requireChatGPTUser("/");
-  return <Workbench userName={user.displayName} />;
+  return <SimpleWorkbench userName={user.displayName} />;
 }
