@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./simple-pin-map.css";
 
@@ -164,7 +165,7 @@ export default function SimplePinMap() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setSelectedIds(readSelectedIds());
+    queueMicrotask(() => setSelectedIds(readSelectedIds()));
     void fetch("/api/cases?view=summary", { cache: "no-store" })
       .then(async (response) => {
         const payload = (await response.json()) as { cases?: CaseSummary[]; error?: string };
@@ -239,7 +240,7 @@ export default function SimplePinMap() {
   return (
     <main className="simple-map-shell">
       <header className="simple-map-header">
-        <a href="/" className="simple-map-back">← 返回案件</a>
+        <Link href="/" className="simple-map-back">← 返回案件</Link>
         <div>
           <strong>已選案件地圖</strong>
           <span>{selectedCases.length} 戶・只放圖釘，不排行程</span>
@@ -251,14 +252,14 @@ export default function SimplePinMap() {
         <div className="simple-map-empty">
           <strong>目前沒有勾選案件</strong>
           <span>先回首頁勾選今天要看的戶，再打開地圖。</span>
-          <a href="/">回首頁勾選</a>
+          <Link href="/">回首頁勾選</Link>
         </div>
       ) : null}
       {!loading && selectedIds.length > 0 && selectedCases.length === 0 ? (
         <div className="simple-map-empty">
           <strong>找不到已勾選案件</strong>
           <span>案件可能已刪除或清單已更新，請回首頁重新勾選。</span>
-          <a href="/">回首頁</a>
+          <Link href="/">回首頁</Link>
         </div>
       ) : null}
       {error ? <div className="simple-map-message error">{error}</div> : null}
