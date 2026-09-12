@@ -6,6 +6,21 @@ import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 type CaseType = "misread" | "leak";
 type FormState = Record<string, string>;
 
+type ComparisonRow = {
+  label: string;
+  oldName: string;
+  newName: string;
+  unit: string;
+};
+
+const comparisonRows: ComparisonRow[] = [
+  { label: "用水量", oldName: "oldUsage", newName: "newUsage", unit: "度" },
+  { label: "水費", oldName: "oldWaterFee", newName: "newWaterFee", unit: "元" },
+  { label: "營業稅", oldName: "oldTax", newName: "newTax", unit: "元" },
+  { label: "清潔處理費", oldName: "oldCleaningFee", newName: "newCleaningFee", unit: "元" },
+  { label: "保育費", oldName: "oldConservationFee", newName: "newConservationFee", unit: "元" },
+];
+
 const initialState: FormState = {
   caseType: "misread",
   raw31: "",
@@ -93,6 +108,16 @@ function number(value: string) {
 
 function diff(oldValue: string, newValue: string) {
   return number(oldValue) - number(newValue);
+}
+
+function changeLabel(oldValue: string, newValue: string, unit: string) {
+  const oldAmount = number(oldValue);
+  const newAmount = number(newValue);
+  const difference = newAmount - oldAmount;
+  if (difference === 0) return `無差異`;
+  return difference > 0
+    ? `增 ${Math.abs(difference)} ${unit}`
+    : `減 ${Math.abs(difference)} ${unit}`;
 }
 
 async function readApiError(response: Response) {
@@ -324,23 +349,67 @@ export default function AdjustmentForm() {
         </section>
 
         {caseType === "misread" ? (
-          <section className="panel">
-            <h2>4. 台水試算結果—抄表員誤抄</h2>
-            <div className="grid">
+          <section className="panel comparison-panel">
+            <div className="section-heading">
+              <div>
+                <h2>4. 台水試算結果—抄表員誤抄</h2>
+                <p>左邊輸入原帳單，右邊輸入改單後金額；同一費目固定在同一列，方便直接核對。</p>
+              </div>
+            </div>
+
+            <div className="key-grid">
               <Field label="改單期別" name="currentPeriod" value={form.currentPeriod} onChange={update} required />
               <Field label="修正後指針" name="correctedPointer" value={form.correctedPointer} onChange={update} inputMode="numeric" />
-              <Field label="原用水量" name="oldUsage" value={form.oldUsage} onChange={update} inputMode="numeric" required />
-              <Field label="修正後用水量" name="newUsage" value={form.newUsage} onChange={update} inputMode="numeric" required />
-              <Field label="原水費" name="oldWaterFee" value={form.oldWaterFee} onChange={update} inputMode="numeric" required />
-              <Field label="修正後水費" name="newWaterFee" value={form.newWaterFee} onChange={update} inputMode="numeric" required />
-              <Field label="原營業稅" name="oldTax" value={form.oldTax} onChange={update} inputMode="numeric" required />
-              <Field label="修正後營業稅" name="newTax" value={form.newTax} onChange={update} inputMode="numeric" required />
-              <Field label="原清潔處理費" name="oldCleaningFee" value={form.oldCleaningFee} onChange={update} inputMode="numeric" required />
-              <Field label="修正後清潔處理費" name="newCleaningFee" value={form.newCleaningFee} onChange={update} inputMode="numeric" required />
-              <Field label="原保育費" name="oldConservationFee" value={form.oldConservationFee} onChange={update} inputMode="numeric" required />
-              <Field label="修正後保育費" name="newConservationFee" value={form.newConservationFee} onChange={update} inputMode="numeric" required />
             </div>
-            <div className="summary"><span>用水差額：<b>{diff(form.oldUsage, form.newUsage)}</b> 度</span><span>原總額：<b>{totals.oldTotal}</b> 元</span><span>修正後：<b>{totals.newTotal}</b> 元</span><span>{settlementLabel}：<b>{settlementAmount}</b> 元</span></div>
+
+            <div className="comparison-table" role="group" aria-label="原帳單與改單後水費比較">
+              <div className="compare-head">
+                <span>項目</span>
+                <strong className="old-heading">原帳單</strong>
+                <strong className="new-heading">改單後</strong>
+                <span className="diff-heading">差異</span>
+              </div>
+
+              {comparisonRows.map((row) => (
+                <div className="compare-row" key={row.oldName}>
+                  <span className="compare-label">{row.label}</span>
+                  <div className="compare-input old-input">
+                    <input
+                      aria-label={`原${row.label}`}
+                      inputMode="numeric"
+                      required
+                      value={form[row.oldName]}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) => update(row.oldName, event.target.value)}
+                    />
+                    <small>{row.unit}</small>
+                  </div>
+                  <div className="compare-input new-input">
+                    <input
+                      aria-label={`改單後${row.label}`}
+                      inputMode="numeric"
+                      required
+                      value={form[row.newName]}
+                      onChange={(event: ChangeEvent<HTMLInputElement>) => update(row.newName, event.target.value)}
+                    />
+                    <small>{row.unit}</small>
+                  </div>
+                  <span className="compare-diff">{changeLabel(form[row.oldName], form[row.newName], row.unit)}</span>
+                </div>
+              ))}
+
+              <div className="compare-total-row">
+                <strong>合計</strong>
+                <span className="total-value old-total">{totals.oldTotal} 元</span>
+                <span className="total-value new-total">{totals.newTotal} 元</span>
+                <span className="compare-diff total-diff">{changeLabel(String(totals.oldTotal), String(totals.newTotal), "元")}</span>
+              </div>
+            </div>
+
+            <div className="settlement-card">
+              <span>本次改單結果</span>
+              <strong>{settlementLabel} {settlementAmount} 元</strong>
+              <small>用水量差：{Math.abs(diff(form.oldUsage, form.newUsage))} 度</small>
+            </div>
           </section>
         ) : (
           <section className="panel">
@@ -371,5 +440,5 @@ export default function AdjustmentForm() {
 }
 
 const styles = `
-  *{box-sizing:border-box}.adjustment-page{min-height:100vh;background:#f3f7fb;color:#17253d;padding:26px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.adjustment-page>header{max-width:1080px;margin:0 auto 20px;display:flex;justify-content:space-between;align-items:flex-start;gap:20px}.eyebrow{margin:0 0 5px;color:#1263df;font-weight:900}.adjustment-page h1{margin:0;font-size:2rem}.adjustment-page header p:last-child{color:#65738a}.back{display:inline-flex;min-height:44px;align-items:center;padding:0 16px;border:1px solid #bdcad9;border-radius:12px;background:white;color:#1263df;text-decoration:none;font-weight:800}.adjustment-page form{max-width:1080px;margin:auto;display:grid;gap:16px}.panel{background:white;border:1px solid #dce5ef;border-radius:18px;padding:20px;box-shadow:0 8px 24px rgba(23,52,93,.06)}.panel h2{margin:0 0 16px;font-size:1.08rem}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.field{display:grid;gap:7px}.field span{font-size:.78rem;font-weight:850;color:#40506a}.field input,.field textarea,.period-row input{width:100%;border:1px solid #b9c8da;border-radius:10px;background:#fff;padding:11px 12px;font:inherit;color:#17253d}.field textarea{min-height:115px;resize:vertical}.field.full{grid-column:1/-1}.type-switch{display:flex;gap:8px;margin-bottom:14px}.type-switch button,.secondary{min-height:42px;border:1px solid #b9c8da;border-radius:10px;background:#fff;padding:0 14px;font-weight:850;color:#26466f;cursor:pointer}.type-switch button.active{background:#1263df;border-color:#1263df;color:white}.secondary{margin-top:10px}.period-table{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.period-table>strong{font-size:.78rem;color:#65738a}.period-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.summary{display:flex;gap:12px;flex-wrap:wrap;margin-top:14px;padding:13px;border-radius:12px;background:#f3f7fd}.summary span{font-size:.84rem}.summary b{font-size:1rem;color:#1263df}.submit-bar{position:sticky;bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 16px;border:1px solid #b8c9de;border-radius:16px;background:rgba(255,255,255,.96);box-shadow:0 12px 30px rgba(18,42,76,.15);font-size:.8rem;color:#56657a}.submit-bar button{min-height:48px;border:0;border-radius:12px;background:#1263df;color:white;padding:0 22px;font-weight:900;font-size:1rem;cursor:pointer}.submit-bar button:disabled{opacity:.65}@media(max-width:760px){.adjustment-page{padding:15px}.adjustment-page>header{flex-direction:column}.grid{grid-template-columns:1fr 1fr}.submit-bar{align-items:stretch;flex-direction:column}.submit-bar button{width:100%}}@media(max-width:500px){.grid{grid-template-columns:1fr}.period-table{grid-template-columns:repeat(3,minmax(0,1fr))}.panel{padding:16px}}
+  *{box-sizing:border-box}.adjustment-page{min-height:100vh;background:#f3f7fb;color:#17253d;padding:26px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.adjustment-page>header{max-width:1080px;margin:0 auto 20px;display:flex;justify-content:space-between;align-items:flex-start;gap:20px}.eyebrow{margin:0 0 5px;color:#1263df;font-weight:900}.adjustment-page h1{margin:0;font-size:2rem}.adjustment-page header p:last-child{color:#65738a}.back{display:inline-flex;min-height:44px;align-items:center;padding:0 16px;border:1px solid #bdcad9;border-radius:12px;background:white;color:#1263df;text-decoration:none;font-weight:800}.adjustment-page form{max-width:1080px;margin:auto;display:grid;gap:16px}.panel{background:white;border:1px solid #dce5ef;border-radius:18px;padding:20px;box-shadow:0 8px 24px rgba(23,52,93,.06)}.panel h2{margin:0 0 16px;font-size:1.08rem}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.field{display:grid;gap:7px}.field span{font-size:.78rem;font-weight:850;color:#40506a}.field input,.field textarea,.period-row input{width:100%;border:1px solid #b9c8da;border-radius:10px;background:#fff;padding:11px 12px;font:inherit;color:#17253d}.field textarea{min-height:115px;resize:vertical}.field.full{grid-column:1/-1}.type-switch{display:flex;gap:8px;margin-bottom:14px}.type-switch button,.secondary{min-height:42px;border:1px solid #b9c8da;border-radius:10px;background:#fff;padding:0 14px;font-weight:850;color:#26466f;cursor:pointer}.type-switch button.active{background:#1263df;border-color:#1263df;color:white}.secondary{margin-top:10px}.period-table{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.period-table>strong{font-size:.78rem;color:#65738a}.period-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.summary{display:flex;gap:12px;flex-wrap:wrap;margin-top:14px;padding:13px;border-radius:12px;background:#f3f7fd}.summary span{font-size:.84rem}.summary b{font-size:1rem;color:#1263df}.section-heading{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.section-heading h2{margin-bottom:5px}.section-heading p{margin:0 0 16px;color:#65738a;font-size:.88rem;line-height:1.55}.key-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:16px}.comparison-table{overflow:hidden;border:1px solid #cedae8;border-radius:14px;background:#fff}.compare-head,.compare-row,.compare-total-row{display:grid;grid-template-columns:140px minmax(0,1fr) minmax(0,1fr) 112px;gap:10px;align-items:center}.compare-head{padding:10px 12px;background:#edf3fa;color:#52647d;font-size:.78rem}.compare-head strong{text-align:center}.old-heading{color:#5f6b7c}.new-heading{color:#1263df}.diff-heading{text-align:right}.compare-row{padding:10px 12px;border-top:1px solid #e4ebf3}.compare-label{font-size:.86rem;font-weight:900;color:#293b55}.compare-input{position:relative}.compare-input input{width:100%;min-height:46px;border:1px solid #b9c8da;border-radius:10px;padding:10px 38px 10px 11px;font:inherit;font-size:1rem;color:#17253d;text-align:right}.compare-input small{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:#7a899c;font-size:.72rem;pointer-events:none}.old-input input{background:#f8fafc}.new-input input{background:#f2f7ff;border-color:#88b5ee;font-weight:850}.new-input input:focus{outline:3px solid rgba(18,99,223,.14);border-color:#1263df}.compare-diff{text-align:right;color:#52647d;font-size:.78rem;font-weight:800}.compare-total-row{padding:12px;background:#f7faff;border-top:1px solid #dce6f1}.total-value{text-align:right;border-radius:9px;padding:10px 12px;font-weight:900}.old-total{background:#eef1f5}.new-total{background:#e7f1ff;color:#0d59c9}.total-diff{font-size:.82rem}.settlement-card{margin-top:14px;padding:14px 16px;border-radius:14px;background:#123968;color:white;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center}.settlement-card span{font-size:.8rem;font-weight:800;opacity:.78}.settlement-card strong{font-size:1.22rem}.settlement-card small{text-align:right;opacity:.82}.submit-bar{position:sticky;bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 16px;border:1px solid #b8c9de;border-radius:16px;background:rgba(255,255,255,.96);box-shadow:0 12px 30px rgba(18,42,76,.15);font-size:.8rem;color:#56657a}.submit-bar button{min-height:48px;border:0;border-radius:12px;background:#1263df;color:white;padding:0 22px;font-weight:900;font-size:1rem;cursor:pointer}.submit-bar button:disabled{opacity:.65}@media(max-width:760px){.adjustment-page{padding:15px}.adjustment-page>header{flex-direction:column}.grid{grid-template-columns:1fr 1fr}.compare-head,.compare-row,.compare-total-row{grid-template-columns:92px minmax(0,1fr) minmax(0,1fr) 84px;gap:7px}.compare-head,.compare-row{padding-left:9px;padding-right:9px}.settlement-card{grid-template-columns:1fr auto}.settlement-card small{grid-column:1/-1;text-align:left}.submit-bar{align-items:stretch;flex-direction:column}.submit-bar button{width:100%}}@media(max-width:560px){.comparison-panel{padding:14px}.key-grid{grid-template-columns:1fr 1fr}.compare-head,.compare-row,.compare-total-row{grid-template-columns:76px minmax(0,1fr) minmax(0,1fr)}.diff-heading{display:none}.compare-diff{grid-column:2/4;text-align:right;margin-top:-3px;font-size:.72rem}.compare-row{row-gap:5px}.compare-input input{padding:10px 31px 10px 8px}.compare-input small{right:8px}.total-diff{grid-column:2/4}.settlement-card{grid-template-columns:1fr}.settlement-card small{text-align:left}.settlement-card strong{font-size:1.12rem}}@media(max-width:500px){.grid{grid-template-columns:1fr}.period-table{grid-template-columns:repeat(3,minmax(0,1fr))}.panel{padding:16px}.key-grid{grid-template-columns:1fr 1fr}}
 `;
