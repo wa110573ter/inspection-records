@@ -489,7 +489,7 @@ export default function SimpleWorkbench({ userName }: { userName: string }) {
     <main className="sw-shell">
       <header className="sw-top">
         <div><h1>虎尾所查表工作台</h1><p>{userName}｜勾選只是暫存工作清單，不會改成完成或略過。</p></div>
-        <nav><a href="/import">批次匯入</a><a href="/journal">處理日誌</a><a href="/legacy">舊版案件</a><a className="adjustment" href="/adjustment">改單 ODS</a></nav>
+        <nav><a href="/arrears">2期欠費貼單</a><a href="/import">批次匯入</a><a href="/journal">處理日誌</a><a href="/legacy">舊版案件</a><a className="adjustment" href="/adjustment">改單 ODS</a></nav>
       </header>
 
       <section className="sw-tools">
